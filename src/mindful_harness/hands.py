@@ -14,13 +14,15 @@ LLM-driven execution lands as a separate adapter.
 
 from __future__ import annotations
 
+import copy
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from mindful_harness.mind import Mind
-from mindful_harness.primitives import Conditional, Decision
+from mindful_harness.primitives import Decision
 
 
 @dataclass
@@ -171,17 +173,18 @@ def spawn_hand(
     framework: str,
     snapshot_keys: list[str] | None = None,
 ) -> Hand:
-    """Spawn a Hand with relevant Mind state captured at spawn time.
+    """Spawn a Hand with relevant Mind state deep-copied at spawn time.
 
-    The snapshot is intentionally a value-copy: the Hand operates on
-    what the Mind believed when the work began. If new evidence
-    arrives during execution, the Mind will note it and may issue a
-    new Hand, but the running one isn't disrupted mid-flight.
+    The snapshot is a deep copy: the Hand operates on what the Mind
+    believed when the work began, and subsequent Mind mutations cannot
+    reach into the running Hand's view. If new evidence arrives during
+    execution, the Mind will note it and may issue a new Hand, but the
+    running one isn't disrupted mid-flight.
     """
     snapshot: dict[str, Any] = {
         "spawned_at": time.time(),
-        "beliefs": dict(mind.beliefs),
-        "knowledge": dict(mind.knowledge),
+        "beliefs": copy.deepcopy(mind.beliefs),
+        "knowledge": copy.deepcopy(mind.knowledge),
         "open_questions": [q.text for q in mind.questions if not q.resolved],
         "interests": [i.text for i in mind.interests],
     }

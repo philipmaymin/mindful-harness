@@ -17,9 +17,8 @@ import sys
 import time
 
 from mindful_harness import Mind
-from mindful_harness.mind import FirehoseItem
 from mindful_harness.llm import ingest
-
+from mindful_harness.mind import FirehoseItem
 
 MOCK_FIREHOSE: list[FirehoseItem] = [
     FirehoseItem(

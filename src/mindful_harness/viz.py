@@ -16,7 +16,6 @@ from datetime import datetime
 
 from mindful_harness.mind import Mind
 
-
 _CSS = """
 :root {
   --bg: #fafaf7;

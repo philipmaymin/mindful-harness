@@ -17,7 +17,6 @@ from mindful_harness import Conditional, FirehoseItem, Mind
 from mindful_harness.llm import (
     DISTILLATION_SCHEMA,
     HAND_SCHEMA,
-    HAND_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
     ClaudeCLIError,
     _run_claude,
@@ -171,9 +170,13 @@ class TestRunClaude:
         )
         _run_claude(user_prompt="test prompt", model="haiku")
         args = mock_run.call_args[0][0]
+        kwargs = mock_run.call_args[1]
         assert args[0] == "claude"
         assert "-p" in args
-        assert "test prompt" in args
+        # User prompt MUST go via stdin, not argv — preventing exposure
+        # through process listings on shared hosts.
+        assert "test prompt" not in args
+        assert kwargs.get("input") == "test prompt"
         assert "--system-prompt" in args
         assert SYSTEM_PROMPT in args
         assert "--tools" in args
@@ -288,6 +291,38 @@ class TestApplyDistillation:
         apply_distillation(d, empty_mind, sample_item)
         assert "" not in empty_mind.beliefs
         assert "good" in empty_mind.beliefs
+
+    def test_unexpected_build_error_leaves_mind_untouched(
+        self, sample_item: FirehoseItem, empty_mind: Mind
+    ) -> None:
+        """If the build phase raises an unexpected exception, the Mind is not partially mutated."""
+        # `confidence` is a non-numeric string; float() will raise ValueError.
+        bad_distillation = {
+            "framework": "f",
+            "not_looking_for": "x",
+            "belief_updates": [
+                {
+                    "key": "first",
+                    "value": "OK",
+                    "confidence": 0.5,
+                    "alternatives": ["a", "b"],
+                },
+                {
+                    "key": "second",
+                    "value": "BAD",
+                    "confidence": "not a number",
+                    "alternatives": ["a", "b"],
+                },
+            ],
+            "questions": ["should this appear?"],
+        }
+        with pytest.raises(ValueError):
+            apply_distillation(bad_distillation, empty_mind, sample_item)
+
+        # Build phase failed before commit, so NO mutation happened.
+        assert empty_mind.beliefs == {}
+        assert empty_mind.questions == []
+        assert empty_mind.ingestion_log == []
 
 
 class TestHandSchema:

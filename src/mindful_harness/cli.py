@@ -33,7 +33,6 @@ from mindful_harness.drift import detect_drift
 from mindful_harness.persistence import load_or_new, save
 from mindful_harness.viz import render_mind_html, render_mind_json
 
-
 DEFAULT_STATE_PATH = Path(
     os.environ.get(
         "MINDFUL_HARNESS_STATE", str(Path.home() / ".mindful-harness" / "mind.json")
@@ -93,6 +92,9 @@ def cmd_ingest(args: argparse.Namespace) -> int:
                 f"{distillation.get('_duration_ms', 0)/1000:.1f}s)"
             )
         except Exception as e:
+            # apply_distillation is build-then-commit: on failure the
+            # Mind has NOT been mutated, so it is safe to fall back to a
+            # plain ingest without double-logging the item.
             print(f"LLM ingest failed: {e}", file=sys.stderr)
             print("Item added to firehose without distillation.", file=sys.stderr)
             mind.ingest(item)

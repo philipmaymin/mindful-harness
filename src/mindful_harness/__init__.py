@@ -19,7 +19,6 @@ from mindful_harness.hands import (
     run_with_advocate_and_questioner,
     spawn_hand,
 )
-from mindful_harness.viz import render_mind_html, render_mind_json
 from mindful_harness.mind import (
     Curiosity,
     FirehoseItem,
@@ -36,8 +35,9 @@ from mindful_harness.primitives import (
     Distinction,
     is_certain,
 )
+from mindful_harness.viz import render_mind_html, render_mind_json
 
-__version__ = "0.0.7"
+__version__ = "0.0.8"
 
 __all__ = [
     "Advocate",

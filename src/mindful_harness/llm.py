@@ -19,12 +19,13 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mindful_harness.mind import FirehoseItem, Mind
 from mindful_harness.primitives import Conditional, Distinction
 
+if TYPE_CHECKING:
+    from mindful_harness.hands import HandResult
 
 CLAUDE_BINARY = os.environ.get("CLAUDE_BINARY", "claude")
 DEFAULT_INGESTION_MODEL = os.environ.get("MINDFUL_HARNESS_INGESTION_MODEL", "haiku")
@@ -201,13 +202,17 @@ def _run_claude(
 ) -> dict[str, Any]:
     """Invoke `claude -p` with our system prompt and structured output.
 
+    The user prompt (which may contain sensitive firehose data such as
+    email bodies, dashboard values, or document fragments) is passed
+    via stdin rather than argv to avoid exposure through process
+    listings on shared hosts.
+
     Returns the parsed CLI response (the JSON metadata envelope, with
     `structured_output` populated when a schema was provided).
     """
     args: list[str] = [
         CLAUDE_BINARY,
         "-p",
-        user_prompt,
         "--system-prompt",
         system_prompt,
         "--tools",
@@ -226,6 +231,7 @@ def _run_claude(
     try:
         completed = subprocess.run(
             args,
+            input=user_prompt,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -304,89 +310,104 @@ def apply_distillation(
 ) -> None:
     """Mutate the Mind with the structured updates from `distill_item`.
 
-    Each update goes through the typed primitive (Conditional, Distinction,
-    etc.), which raises if the structural constraint is violated. The
-    Mind never accepts unsafely-shaped state from the model.
+    Done in two phases: first the typed primitives (Conditional,
+    Distinction, etc.) are constructed in a build phase that can raise
+    ValueError. Only if the build phase succeeds does the commit phase
+    mutate the Mind. This prevents partially-applied state when the
+    model produces a malformed payload, which in turn prevents the
+    caller from double-ingesting the same item on retry.
     """
-    mind.ingest(item)
-
-    for d in distillation.get("distinctions", []):
-        try:
-            mind.record_distinction(
-                Distinction(
-                    item=item.content,
-                    compared_to=d.get("compared_to", "(prior items)"),
-                    noticed=d.get("noticed", ""),
-                    forces_new_category=bool(d.get("forces_new_category", False)),
-                )
-            )
-        except ValueError:
-            # Empty noticed-difference; skip silently — the schema should
-            # prevent this, but defensive.
-            continue
-
     framework = distillation.get("framework", "")
 
+    # ---- Build phase: construct typed primitives. May raise. ----
+
+    distinctions_to_add: list[Distinction] = []
+    for d in distillation.get("distinctions", []):
+        noticed = (d.get("noticed") or "").strip()
+        if not noticed:
+            continue  # schema should prevent, but stay defensive
+        distinctions_to_add.append(
+            Distinction(
+                item=item.content,
+                compared_to=d.get("compared_to", "(prior items)"),
+                noticed=noticed,
+                forces_new_category=bool(d.get("forces_new_category", False)),
+            )
+        )
+
+    beliefs_to_add: list[tuple[str, Conditional[Any]]] = []
     for update in distillation.get("belief_updates", []):
         key = (update.get("key") or "").strip()
         if not key:
             continue
-        try:
-            mind.believe(
+        alternatives = list(update.get("alternatives", []))
+        if len(alternatives) < 2:
+            continue
+        beliefs_to_add.append(
+            (
                 key,
                 Conditional(
                     value=update.get("value"),
                     confidence=float(update.get("confidence", 0.5)),
-                    alternatives=list(update.get("alternatives", [])),
+                    alternatives=alternatives,
                     framing=framework,
                 ),
             )
-        except ValueError:
-            # Conditional requires three framings; the schema enforces
-            # minItems: 2 on alternatives so this should pass, but
-            # defensive against model misbehavior.
-            continue
+        )
 
+    knowledge_to_add: list[tuple[str, Conditional[Any]]] = []
     for update in distillation.get("knowledge_updates", []):
         key = (update.get("key") or "").strip()
         if not key:
             continue
-        try:
-            mind.know(
+        alternatives = list(update.get("alternatives", []))
+        if len(alternatives) < 2:
+            continue
+        knowledge_to_add.append(
+            (
                 key,
                 Conditional(
                     value=update.get("value"),
                     confidence=float(update.get("confidence", 0.5)),
-                    alternatives=list(update.get("alternatives", [])),
+                    alternatives=alternatives,
                     framing=framework,
                 ),
             )
-        except ValueError:
-            continue
+        )
 
-    for q in distillation.get("questions", []):
-        if q:
-            mind.ask(q)
+    questions = [q for q in distillation.get("questions", []) if q]
+    interests = [i for i in distillation.get("interests", []) if i]
+    curiosities = [c for c in distillation.get("curiosities", []) if c]
+    opportunities = [
+        (o.get("text", ""), o.get("enables", ""))
+        for o in distillation.get("opportunities", [])
+        if o.get("text")
+    ]
+    ideas = [
+        (idea.get("text", ""), list(idea.get("connects", []) or []))
+        for idea in distillation.get("ideas", [])
+        if idea.get("text")
+    ]
 
-    for i in distillation.get("interests", []):
-        if i:
-            mind.notice(i)
+    # ---- Commit phase: only after the build phase succeeded. ----
 
-    for c in distillation.get("curiosities", []):
-        if c:
-            mind.wonder(c)
-
-    for o in distillation.get("opportunities", []):
-        text = o.get("text", "")
-        enables = o.get("enables", "")
-        if text:
-            mind.see_opportunity(text=text, enables=enables)
-
-    for idea in distillation.get("ideas", []):
-        text = idea.get("text", "")
-        connects = idea.get("connects", []) or []
-        if text:
-            mind.connect(text=text, connects=list(connects))
+    mind.ingest(item)
+    for d in distinctions_to_add:
+        mind.record_distinction(d)
+    for key, c in beliefs_to_add:
+        mind.believe(key, c)
+    for key, c in knowledge_to_add:
+        mind.know(key, c)
+    for q in questions:
+        mind.ask(q)
+    for i in interests:
+        mind.notice(i)
+    for c in curiosities:
+        mind.wonder(c)
+    for text, enables in opportunities:
+        mind.see_opportunity(text=text, enables=enables)
+    for text, connects in ideas:
+        mind.connect(text=text, connects=connects)
 
 
 def ingest(
@@ -481,7 +502,7 @@ def execute_hand_llm(
     hand,
     model: str = DEFAULT_HANDS_MODEL,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> "HandResult":
+) -> HandResult:
     """Execute a Hand via the Claude CLI.
 
     Imports HandResult lazily so this module remains optional for users

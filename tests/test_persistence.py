@@ -160,3 +160,60 @@ class TestFileIO:
         save(populated_mind, path)
         mind = load_or_new(path)
         assert "revenue" in mind.beliefs
+
+
+class TestFileSecurityAndAtomicity:
+    def test_state_file_has_0600_permissions(
+        self, populated_mind: Mind, tmp_path: Path
+    ) -> None:
+        import os
+        import stat
+        path = tmp_path / "secrets" / "mind.json"
+        save(populated_mind, path)
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+        assert mode == 0o600, f"expected 0600, got {oct(mode)}"
+
+    def test_state_directory_has_0700_permissions(
+        self, populated_mind: Mind, tmp_path: Path
+    ) -> None:
+        import os
+        import stat
+        path = tmp_path / "secrets" / "mind.json"
+        save(populated_mind, path)
+        mode = stat.S_IMODE(os.stat(path.parent).st_mode)
+        assert mode == 0o700, f"expected 0700, got {oct(mode)}"
+
+    def test_save_leaves_no_tmp_files_on_success(
+        self, populated_mind: Mind, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "mind.json"
+        save(populated_mind, path)
+        leftovers = [
+            p for p in tmp_path.iterdir()
+            if p.name.endswith(".tmp") or p.name.endswith(".lock")
+        ]
+        assert leftovers == []
+
+    def test_save_is_atomic_on_failure(
+        self, populated_mind: Mind, tmp_path: Path, monkeypatch
+    ) -> None:
+        """If the write fails mid-flight, the previous file should be intact."""
+        path = tmp_path / "mind.json"
+        save(populated_mind, path)
+        original_bytes = path.read_bytes()
+
+        # Force the temp-file write to fail.
+        import os as _os
+
+        def boom(src, dst):
+            raise RuntimeError("simulated write failure")
+
+        monkeypatch.setattr(_os, "replace", boom)
+
+        with pytest.raises(RuntimeError):
+            # Mutate so the save would otherwise change the file.
+            populated_mind.notice("a new anomaly to persist")
+            save(populated_mind, path)
+
+        # File on disk is the original, not partial.
+        assert path.read_bytes() == original_bytes

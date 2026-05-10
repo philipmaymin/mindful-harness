@@ -2,8 +2,8 @@
 
 import time
 
-from mindful_harness import Conditional, Decision, Mind
-from mindful_harness.drift import DriftReport, detect_drift
+from mindful_harness import Decision, Mind
+from mindful_harness.drift import detect_drift
 
 
 class TestDriftReport:

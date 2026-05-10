@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.25,<2"]
 build-backend = "hatchling.build"
 
 [project]
 name = "mindful-harness"
-version = "0.0.7"
+version = "0.0.8"
 description = "A mindful substrate for AI-native work, inspired by Ellen Langer's research on mindfulness."
 authors = [{ name = "Philip Maymin" }]
 license = { text = "MIT" }
@@ -19,7 +19,11 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "ruff>=0.1", "mypy>=1.0"]
+dev = [
+    "pytest>=8.0,<10",
+    "ruff>=0.5,<1",
+    "mypy>=1.0,<2",
+]
 
 [project.scripts]
 mindful-harness = "mindful_harness.cli:main"
@@ -28,8 +32,17 @@ mindful-harness = "mindful_harness.cli:main"
 packages = ["src/mindful_harness"]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+# LLM prompt strings and Mind summaries are paragraph-shaped; readability
+# beats line length for these.
+"src/mindful_harness/llm.py" = ["E501"]
+# Sample firehose content in the demo is intentionally email-shaped.
+"examples/founders_inbox.py" = ["E501"]
+# Demo Mind has paragraph-shaped sample content.
+"examples/render_mind.py" = ["E501"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N"]

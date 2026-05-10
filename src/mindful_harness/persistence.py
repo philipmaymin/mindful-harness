@@ -13,10 +13,18 @@ feeding into other tools.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl  # POSIX only
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None  # type: ignore[assignment]
 
 from mindful_harness.mind import (
     Curiosity,
@@ -228,17 +236,83 @@ def from_dict(data: dict[str, Any]) -> Mind:
     return mind
 
 
+@contextlib.contextmanager
+def _file_lock(lock_path: Path):
+    """Best-effort exclusive lock across processes on POSIX systems.
+
+    Falls back to a no-op on platforms without fcntl. Used so concurrent
+    CLI invocations cannot interleave load/mutate/save sequences and
+    lose updates.
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_f = open(lock_path, "w")  # noqa: SIM115 - lifetime managed manually
+    try:
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+            except OSError:
+                pass  # filesystem doesn't support locks; continue best-effort
+        yield
+    finally:
+        try:
+            if fcntl is not None:
+                with contextlib.suppress(OSError):
+                    fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_f.close()
+            with contextlib.suppress(OSError):
+                lock_path.unlink()
+
+
+def _restrict_dir_permissions(directory: Path) -> None:
+    """Force the state directory to 0700 if we own it. Best effort."""
+    with contextlib.suppress(OSError):
+        if directory.stat().st_uid == os.getuid():
+            os.chmod(directory, 0o700)
+
+
 def save(mind: Mind, path: str | Path) -> Path:
-    """Save a Mind to a JSON file. Returns the resolved path."""
+    """Save a Mind to a JSON file atomically with restrictive permissions.
+
+    The file is written to a sibling temp file with mode 0600, then
+    atomically renamed onto the target path. A `.lock` file in the
+    parent directory serializes concurrent writers so two CLI runs
+    cannot lose each other's updates. Returns the resolved path.
+    """
     p = Path(path).expanduser().resolve()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(to_dict(mind), indent=2, default=str))
+    _restrict_dir_permissions(p.parent)
+
+    payload = json.dumps(to_dict(mind), indent=2, default=str).encode("utf-8")
+
+    lock_path = p.with_name(p.name + ".lock")
+    with _file_lock(lock_path):
+        fd, tmp_path_str = tempfile.mkstemp(
+            dir=p.parent, prefix=f".{p.name}.", suffix=".tmp"
+        )
+        tmp_path = Path(tmp_path_str)
+        try:
+            with os.fdopen(fd, "wb") as tmp_f:
+                tmp_f.write(payload)
+                tmp_f.flush()
+                os.fsync(tmp_f.fileno())
+            os.chmod(tmp_path, 0o600)
+            os.replace(tmp_path, p)
+        except BaseException:
+            with contextlib.suppress(FileNotFoundError):
+                tmp_path.unlink()
+            raise
+
     return p
 
 
 def load(path: str | Path) -> Mind:
     """Load a Mind from a JSON file. Raises FileNotFoundError if missing."""
     p = Path(path).expanduser().resolve()
+    lock_path = p.with_name(p.name + ".lock")
+    if p.parent.exists():
+        with _file_lock(lock_path):
+            return from_dict(json.loads(p.read_text()))
     return from_dict(json.loads(p.read_text()))
 
 

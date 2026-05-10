@@ -106,6 +106,23 @@ class TestSpawnHand:
         h2 = spawn_hand(m, task="t", framework="f")
         assert h1.id != h2.id
 
+    def test_snapshot_is_deep_copy_not_shallow(self) -> None:
+        """Mutating the Mind after spawn must not change the Hand's snapshot."""
+        m = Mind()
+        m.believe(
+            "drift-target",
+            Conditional(value="original", confidence=0.5, alternatives=["b", "c"]),
+        )
+        h = spawn_hand(m, task="t", framework="f")
+        # Replace the belief in the live Mind with a fresh Conditional.
+        m.believe(
+            "drift-target",
+            Conditional(value="mutated", confidence=0.9, alternatives=["x", "y"]),
+        )
+        snapshot_belief = h.mind_snapshot["beliefs"]["drift-target"]
+        assert snapshot_belief.value == "original"
+        assert snapshot_belief.confidence == 0.5
+
 
 class TestHandManualExecute:
     def test_returns_hand_result(self) -> None:
