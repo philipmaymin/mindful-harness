@@ -96,9 +96,8 @@ class Opportunity:
     """An action-implication of new information.
 
     What does this enable that wasn't possible before? Opportunities
-    have a kindfulness vector implicit in them — they are framed as
-    possibilities for the Mind's counterparts (user, agents, org), not
-    as extractive moves.
+    are framed as possibilities the Mind has noticed: what new action
+    space has opened, for whom, under what framing.
     """
 
     text: str

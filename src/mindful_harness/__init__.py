@@ -12,10 +12,10 @@ full design.
 """
 
 from mindful_harness.hands import (
+    Advocate,
     FrameworkQuestioner,
     Hand,
     HandResult,
-    KindfulAdvocate,
     run_with_advocate_and_questioner,
     spawn_hand,
 )
@@ -34,13 +34,13 @@ from mindful_harness.primitives import (
     Conditional,
     Decision,
     Distinction,
-    KindfulnessVector,
     is_certain,
 )
 
-__version__ = "0.0.4"
+__version__ = "0.0.7"
 
 __all__ = [
+    "Advocate",
     "CERTAINTY_THRESHOLD",
     "Conditional",
     "Curiosity",
@@ -52,8 +52,6 @@ __all__ = [
     "HandResult",
     "Idea",
     "Interest",
-    "KindfulAdvocate",
-    "KindfulnessVector",
     "Mind",
     "Opportunity",
     "Question",

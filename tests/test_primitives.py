@@ -9,7 +9,6 @@ from mindful_harness.primitives import (
     Conditional,
     Decision,
     Distinction,
-    KindfulnessVector,
     is_certain,
 )
 
@@ -166,42 +165,6 @@ class TestDecision:
         assert "delay" in text
         assert "rev-up" in text
         assert "churn" in text
-
-
-class TestKindfulnessVector:
-    def test_requires_explicit_counterpart(self) -> None:
-        with pytest.raises(ValueError, match="counterpart"):
-            KindfulnessVector(toward="", disposition="generous")
-        with pytest.raises(ValueError, match="counterpart"):
-            KindfulnessVector(toward="   ", disposition="generous")
-
-    def test_requires_explicit_disposition(self) -> None:
-        with pytest.raises(ValueError, match="disposition"):
-            KindfulnessVector(toward="the customer", disposition="")
-
-    def test_well_formed_vector(self) -> None:
-        v = KindfulnessVector(
-            toward="the support team",
-            disposition="curious and supportive",
-            preserve_agency=True,
-        )
-        assert v.preserve_agency
-        text = str(v)
-        assert "support team" in text
-        assert "curious" in text
-        assert "preserving agency" in text
-
-    def test_default_preserves_agency(self) -> None:
-        v = KindfulnessVector(toward="X", disposition="Y")
-        assert v.preserve_agency is True
-
-    def test_explicit_agency_constraint_visible(self) -> None:
-        v = KindfulnessVector(
-            toward="adversary in negotiation",
-            disposition="firm",
-            preserve_agency=False,
-        )
-        assert "may constrain agency" in str(v)
 
 
 class TestDistinction:

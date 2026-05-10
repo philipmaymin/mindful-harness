@@ -4,8 +4,8 @@ The Mind's structure (Conditional, Distinction, Question, ...) is already
 in place. This module fills that structure with content by calling
 `claude -p` with a system prompt that enforces the Langer primitives at
 the output layer: conditional language, three-or-more alternatives,
-framework transparency, kindfulness in counterpart-modeling, structural
-JSON-schema enforcement on the response.
+framework transparency, structural JSON-schema enforcement on the
+response.
 
 Using the Claude Code CLI rather than the Anthropic SDK directly lets
 the harness run on a user's Claude subscription without a separate API
@@ -48,11 +48,9 @@ Apply Langer's primitives at the output layer:
 
 4. FRAMEWORK TRANSPARENCY. State the framework you are operating under. State what you are NOT looking for.
 
-5. KINDFULNESS. When the item involves a counterpart (person, agent, organization), surface opportunities that preserve their agency, not opportunities that extract from them.
+5. CERTAINTY AS ALARM. If you find yourself producing a high-confidence claim, flag it for interrogation rather than treating it as load-bearing.
 
-6. CERTAINTY AS ALARM. If you find yourself producing a high-confidence claim, flag it for interrogation rather than treating it as load-bearing.
-
-7. COUNTERFACTUAL POSTURE. For any explanation you propose, generate at least one alternative explanation that fits the same evidence.
+6. COUNTERFACTUAL POSTURE. For any explanation you propose, generate at least one alternative explanation that fits the same evidence.
 
 Empty lists are honest; padding is mindless. If a category has nothing to add, return an empty list rather than inventing content."""
 
@@ -457,7 +455,7 @@ Apply Langer's primitives at the per-action level:
 
 3. CONDITIONAL LANGUAGE. The chosen action is phrased as "could" or "may" rather than "will" or "must."
 
-4. KINDFULNESS. The chosen action preserves the counterpart's agency. If the counterpart is named in the kindfulness vector, the action serves their flourishing rather than extracting from them.
+4. SENSITIVITY TO CONTEXT. The chosen action accounts for who is affected by it and the specific situation, rather than applying a general rule mechanically. Mindfulness here is openness to the particulars of this case.
 
 5. REVERSION TRIGGERS. State what would make you choose differently. A decision without reversion triggers ossifies into invisible commitment.
 
@@ -466,14 +464,12 @@ Apply Langer's primitives at the per-action level:
 Return JSON matching the schema. Empty fields are honest; padding is mindless."""
 
 
-def _hand_user_prompt(hand_task: str, hand_framework: str, hand_kindfulness, snapshot: dict[str, Any]) -> str:
+def _hand_user_prompt(hand_task: str, hand_framework: str, snapshot: dict[str, Any]) -> str:
     snapshot_text = json.dumps(snapshot, indent=2, default=str)
     snapshot_text = _trim_for_context(snapshot_text, limit=3000)
     return f"""Task: {hand_task}
 
 Framework: {hand_framework}
-
-Kindfulness vector: {hand_kindfulness}
 
 Mind state at spawn:
 {snapshot_text}
@@ -497,7 +493,6 @@ def execute_hand_llm(
     user_prompt = _hand_user_prompt(
         hand_task=hand.task,
         hand_framework=hand.framework,
-        hand_kindfulness=hand.kindfulness,
         snapshot=hand.mind_snapshot,
     )
 
@@ -527,6 +522,5 @@ def execute_hand_llm(
         framings=dict(structured["framings"]),
         framework=hand.framework,
         confidence=float(structured["confidence"]),
-        kindfulness=hand.kindfulness,
         process_trail=list(hand.process_trail) + [f"reasoning: {structured.get('reasoning', '')[:200]}"],
     )

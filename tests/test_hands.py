@@ -3,20 +3,15 @@
 import pytest
 
 from mindful_harness import (
+    Advocate,
     Conditional,
     FrameworkQuestioner,
     Hand,
     HandResult,
-    KindfulAdvocate,
-    KindfulnessVector,
     Mind,
     run_with_advocate_and_questioner,
     spawn_hand,
 )
-
-
-def _vector() -> KindfulnessVector:
-    return KindfulnessVector(toward="the team", disposition="curious and supportive")
 
 
 def _three_framings() -> dict[str, str]:
@@ -55,8 +50,7 @@ class TestHandResult:
             framings=_three_framings(),
             framework="quarter-planning",
             confidence=0.6,
-            kindfulness=_vector(),
-        )
+                    )
         assert r.chosen == "build-it"
         assert len(r.framings) == 3
 
@@ -80,8 +74,7 @@ class TestSpawnHand:
             "x", Conditional(value="A", confidence=0.5, alternatives=["B", "C"])
         )
         h = spawn_hand(
-            m, task="investigate x", framework="initial", kindfulness=_vector()
-        )
+            m, task="investigate x", framework="initial"        )
         assert "beliefs" in h.mind_snapshot
         assert "x" in h.mind_snapshot["beliefs"]
 
@@ -89,8 +82,7 @@ class TestSpawnHand:
         m = Mind()
         m.ask("why X?")
         h = spawn_hand(
-            m, task="investigate x", framework="initial", kindfulness=_vector()
-        )
+            m, task="investigate x", framework="initial"        )
         assert "why X?" in h.mind_snapshot["open_questions"]
 
     def test_snapshot_keys_filter(self) -> None:
@@ -103,23 +95,22 @@ class TestSpawnHand:
             m,
             task="...",
             framework="...",
-            kindfulness=_vector(),
-            snapshot_keys=["beliefs"],
+                        snapshot_keys=["beliefs"],
         )
         assert "beliefs" in h.mind_snapshot
         assert "open_questions" not in h.mind_snapshot
 
     def test_hand_has_unique_id(self) -> None:
         m = Mind()
-        h1 = spawn_hand(m, task="t", framework="f", kindfulness=_vector())
-        h2 = spawn_hand(m, task="t", framework="f", kindfulness=_vector())
+        h1 = spawn_hand(m, task="t", framework="f")
+        h2 = spawn_hand(m, task="t", framework="f")
         assert h1.id != h2.id
 
 
 class TestHandManualExecute:
     def test_returns_hand_result(self) -> None:
         m = Mind()
-        h = spawn_hand(m, task="t", framework="initial", kindfulness=_vector())
+        h = spawn_hand(m, task="t", framework="initial")
         r = h.execute_manual(
             chosen="A",
             rejected_alternatives=["B", "C"],
@@ -132,14 +123,14 @@ class TestHandManualExecute:
 
     def test_log_records_steps(self) -> None:
         m = Mind()
-        h = spawn_hand(m, task="t", framework="f", kindfulness=_vector())
+        h = spawn_hand(m, task="t", framework="f")
         h.log("starting work")
         h.log("noticed something")
         assert len(h.process_trail) == 2
         assert "starting work" in h.process_trail[0]
 
 
-class TestKindfulAdvocate:
+class TestAdvocate:
     def test_rejects_empty_critique(self) -> None:
         result = HandResult(
             chosen="A",
@@ -148,7 +139,7 @@ class TestKindfulAdvocate:
             framework="f",
             confidence=0.5,
         )
-        adv = KindfulAdvocate(proposal=result)
+        adv = Advocate(proposal=result)
         with pytest.raises(ValueError, match="empty"):
             adv.critique_manual("")
         with pytest.raises(ValueError, match="empty"):
@@ -162,7 +153,7 @@ class TestKindfulAdvocate:
             framework="f",
             confidence=0.5,
         )
-        adv = KindfulAdvocate(proposal=result)
+        adv = Advocate(proposal=result)
         c = adv.critique_manual(
             "The chosen path assumes Q1 trend continues. If Q2 reverses, this locks us into the wrong path."
         )
@@ -198,8 +189,7 @@ class TestRunWithAdvocateAndQuestioner:
             m,
             task="decide on Q1 investigation",
             framework="initial Q1 review",
-            kindfulness=_vector(),
-        )
+                    )
 
         def execute(hand: Hand) -> HandResult:
             return hand.execute_manual(

@@ -6,9 +6,9 @@ A substrate for AI-native work, inspired by Ellen Langer's research on mindfulne
 
 Existing AI harnesses (Claude Code, AutoGen, CrewAI, LangGraph, MetaGPT, ChatDev, OpenAI Agents SDK) optimize for goal completion on bounded tasks. They are amplifiers of group data: confident, fluent, frequently in error but rarely in doubt. They restart from zero on each task.
 
-The Mindful Harness optimizes for **quality of attention aimed with generosity, sustained over time**. It has a **Mind** that ingests a firehose and maintains an evolving epistemic state. It has **Hands** that act when the Mind notices something action-worthy. Goal completion is one output of attention well-paid; it is not the design objective.
+The Mindful Harness optimizes for **quality of attention sustained over time**. It has a **Mind** that ingests a firehose and maintains an evolving epistemic state. It has **Hands** that act when the Mind notices something action-worthy. Goal completion is one output of attention well-paid; it is not the design objective.
 
-Mindfulness is morally neutral; a predator can be exquisitely mindful. **Kindfulness** is what makes mindful work beneficial rather than predatory: attention aimed at another with generosity, with the counterpart's agency preserved. The harness is both mindful and kindful by structure, not by good intention.
+**Mindfulness is good.** Mindlessness is the source of avoidable harm in hospitals, schools, marriages, markets, and now in AI systems trained on group data. A fully mindful AI substrate is not morally neutral; it is the alternative to systems that automate mindlessness at scale. The disposition that earlier drafts attributed to a separate "kindfulness" primitive is now understood as a natural consequence of full mindfulness: sensitivity to context, awareness of multiple perspectives, and openness to new information all imply seeing the counterpart clearly.
 
 ## Architecture in one image
 
@@ -33,7 +33,7 @@ Mindfulness is morally neutral; a predator can be exquisitely mindful. **Kindful
         ┌─────────┐     ┌────────────────────┐
         │  User / │     │     THE HANDS      │
         │  Other  │     │  Worker agents     │
-        │  Agents │     │  Kindful advocate  │
+        │  Agents │     │  Mindful advocate  │
         └─────────┘     │  Framework         │
                         │  questioner        │
                         └────────────────────┘
@@ -42,21 +42,20 @@ Mindfulness is morally neutral; a predator can be exquisitely mindful. **Kindful
                          (results flow back to Mind)
 ```
 
-## Eleven primitives
+## Ten primitives
 
 Each primitive is a structural lock at the type level rather than a prompt instruction. See `SPEC.md` for the full design and the Langer sources for each.
 
-1. **Conditional language and provisional labeling** — outputs use "could be" not "is."
-2. **Certainty as alarm** — high-confidence outputs trigger interrogation, not trust.
-3. **Three-or-more generation** — forward (alternatives) and backward (counterfactuals).
-4. **Kindfulness vector** — explicit counterpart and disposition, agency preserved.
-5. **Counter-adage surfacing** — when folk wisdom contradicts itself, name it.
-6. **Look-forward-one-step** — articulate the second action, not just the first.
-7. **Drift detection, open categorization, habituation alarm** — successful repetition is a warning sign, not a confirmation.
-8. **Framework transparency and questioning** — state assumptions and what is not being looked for; a separate agent challenges the lens.
-9. **Decisions held loosely** — every commitment carries its reversion triggers.
-10. **Anomaly probing (not escalation)** — investigate before deferring to humans.
-11. **Active distinction-making** — what is novel about this item relative to prior items?
+1. **Conditional language and provisional labeling**, outputs use "could be" not "is."
+2. **Certainty as alarm**, high-confidence outputs trigger interrogation, not trust.
+3. **Three-or-more generation**, forward (alternatives) and backward (counterfactuals).
+4. **Counter-adage surfacing**, when folk wisdom contradicts itself, name it.
+5. **Look-forward-one-step**, articulate the second action, not just the first.
+6. **Drift detection, open categorization, habituation alarm**, successful repetition is a warning sign, not a confirmation.
+7. **Framework transparency and questioning**, state assumptions and what is not being looked for; a separate agent challenges the lens.
+8. **Decisions held loosely**, every commitment carries its reversion triggers.
+9. **Anomaly probing (not escalation)**, investigate before deferring to humans.
+10. **Active distinction-making**, what is novel about this item relative to prior items?
 
 ## Install
 
@@ -126,7 +125,7 @@ for name, c in mind.certainty_alarms():
 
 ## Status
 
-v0.0.6, pre-alpha. The architecture is in place; the structural locks are in place; the LLM integration works; the CLI is usable. What is not yet built: real firehose connectors (IMAP, RSS, file watchers), the kindful advocate as a separately-instantiated LLM process, a backend-driven web app.
+v0.0.7, pre-alpha. The architecture is in place; the structural locks are in place; the LLM integration works; the CLI is usable. What is not yet built: real firehose connectors (IMAP, RSS, file watchers), the mindful advocate as a separately-instantiated LLM process, a backend-driven web app.
 
 ## Interactive demo
 
@@ -148,9 +147,7 @@ PYTHONPATH=src python3 -m pytest tests/
 
 ## Credits
 
-The thinking is Ellen Langer's, from half a century of research on mindfulness. The project is led by Philip Maymin. The harness is one application of the ideas in their in-progress book MINDLESSNESS / KINDFULNESS.
-
-The term "kindfulness" was coined by Philip Maymin and is being developed in their book; this harness uses it as the moral aim of mindful attention.
+The thinking is Ellen Langer's, from half a century of research on mindfulness. The project is led by Philip Maymin. The harness is one application of the ideas in their in-progress book MINDLESSNESS.
 
 ## License
 

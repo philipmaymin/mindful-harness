@@ -117,39 +117,6 @@ class Decision(Generic[T]):
 
 
 @dataclass
-class KindfulnessVector:
-    """The moral aim of mindful attention.
-
-    Mindfulness is morally neutral; a predator can be exquisitely
-    mindful. Kindfulness is what makes mindful work beneficial rather
-    than predatory: attention aimed at another with generosity, with
-    the counterpart's agency preserved. Every consequential action is
-    evaluated against an explicit kindfulness vector before execution.
-    """
-
-    toward: str
-    disposition: str
-    preserve_agency: bool = True
-    notes: str = ""
-
-    def __post_init__(self) -> None:
-        if not self.toward.strip():
-            raise ValueError(
-                "KindfulnessVector requires an explicit counterpart "
-                "(person, agent, group). Generic kindfulness is mindlessness."
-            )
-        if not self.disposition.strip():
-            raise ValueError(
-                "KindfulnessVector requires an explicit disposition "
-                "(generous, curious, supportive, etc.)."
-            )
-
-    def __str__(self) -> str:
-        agency = "preserving agency" if self.preserve_agency else "may constrain agency"
-        return f"toward {self.toward}, with {self.disposition} ({agency})"
-
-
-@dataclass
 class Distinction:
     """An explicit distinction noted between two items.
 

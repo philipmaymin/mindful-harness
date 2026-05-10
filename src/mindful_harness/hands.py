@@ -6,10 +6,10 @@ Each Hand inherits relevant Mind state at spawn time, executes its task
 using the Langer primitives at the per-action level, and returns a
 HandResult that the Mind can integrate.
 
-The structure here (Hand, KindfulAdvocate, FrameworkQuestioner) is
-scaffolded so the orchestration shape is testable. Execution methods
-default to manual-input pathways so the harness can be exercised
-without an LLM; LLM-driven execution lands as a separate adapter.
+The structure here (Hand, Advocate, FrameworkQuestioner) is scaffolded
+so the orchestration shape is testable. Execution methods default to
+manual-input pathways so the harness can be exercised without an LLM;
+LLM-driven execution lands as a separate adapter.
 """
 
 from __future__ import annotations
@@ -20,11 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from mindful_harness.mind import Mind
-from mindful_harness.primitives import (
-    Conditional,
-    Decision,
-    KindfulnessVector,
-)
+from mindful_harness.primitives import Conditional, Decision
 
 
 @dataclass
@@ -42,7 +38,6 @@ class HandResult:
     framings: dict[str, str]
     framework: str
     confidence: float
-    kindfulness: KindfulnessVector | None = None
     process_trail: list[str] = field(default_factory=list)
     advocate_critique: str | None = None
     questioner_challenges: list[str] = field(default_factory=list)
@@ -81,7 +76,7 @@ class Hand:
 
     The Hand is stateless across spawns (it gets fresh Mind state each
     time) but stateful within a spawn (its process trail accumulates).
-    A Hand executes a task, takes a critique from a kindful advocate,
+    A Hand executes a task, takes a critique from a mindful advocate,
     takes challenges from a framework questioner, and only then
     returns a HandResult.
     """
@@ -90,7 +85,6 @@ class Hand:
     task: str
     mind_snapshot: dict[str, Any]
     framework: str
-    kindfulness: KindfulnessVector
     spawned_at: float = field(default_factory=time.time)
     process_trail: list[str] = field(default_factory=list)
 
@@ -119,19 +113,19 @@ class Hand:
             framings=framings,
             framework=self.framework,
             confidence=confidence,
-            kindfulness=self.kindfulness,
             process_trail=list(self.process_trail),
         )
 
 
 @dataclass
-class KindfulAdvocate:
-    """Disagrees with generosity toward the proposed action.
+class Advocate:
+    """Disagrees mindfully with the proposed action.
 
     Separately instantiated from the worker Hand. Its job is to
-    surface the strongest version of the disagreement, dancing with
-    the proposal rather than scoring against it. The output is a
-    string critique with at least one specific concern.
+    surface the strongest version of the disagreement: with multiple
+    framings, conditional language, openness to being wrong itself,
+    and concrete reasoning. The output is a string critique with at
+    least one specific concern.
     """
 
     proposal: HandResult
@@ -140,7 +134,7 @@ class KindfulAdvocate:
         """LLM-free path: caller provides the critique directly."""
         if not critique.strip():
             raise ValueError(
-                "KindfulAdvocate critique cannot be empty. "
+                "Advocate critique cannot be empty. "
                 "An empty disagreement is performative debate."
             )
         return critique
@@ -150,10 +144,10 @@ class KindfulAdvocate:
 class FrameworkQuestioner:
     """Questions the framework itself, not the action.
 
-    Distinct from the kindful advocate: the advocate challenges what
-    to do; the questioner challenges the lens through which the
-    decision is being framed. Output is a list of at least one
-    challenge to the operating framework.
+    Distinct from the advocate: the advocate challenges what to do;
+    the questioner challenges the lens through which the decision is
+    being framed. Output is a list of at least one challenge to the
+    operating framework.
     """
 
     framework: str
@@ -175,7 +169,6 @@ def spawn_hand(
     mind: Mind,
     task: str,
     framework: str,
-    kindfulness: KindfulnessVector,
     snapshot_keys: list[str] | None = None,
 ) -> Hand:
     """Spawn a Hand with relevant Mind state captured at spawn time.
@@ -200,7 +193,6 @@ def spawn_hand(
         task=task,
         mind_snapshot=snapshot,
         framework=framework,
-        kindfulness=kindfulness,
     )
 
 
@@ -218,7 +210,7 @@ def run_with_advocate_and_questioner(
     whose advocate_critique and questioner_challenges are populated.
     """
     result = execute(hand)
-    hand.log("execution complete; consulting kindful advocate")
+    hand.log("execution complete; consulting mindful advocate")
     critique = advocate_critique(result)
     hand.log("advocate critique received; consulting framework questioner")
     challenges = framework_challenges(hand.framework)
@@ -230,7 +222,6 @@ def run_with_advocate_and_questioner(
         framings=result.framings,
         framework=result.framework,
         confidence=result.confidence,
-        kindfulness=result.kindfulness,
         process_trail=list(hand.process_trail),
         advocate_critique=critique,
         questioner_challenges=challenges,

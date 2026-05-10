@@ -310,7 +310,7 @@ class TestHandSchema:
 class TestExecuteHandLLM:
     @patch("mindful_harness.llm._run_claude")
     def test_returns_hand_result(self, mock_run: MagicMock) -> None:
-        from mindful_harness import KindfulnessVector, Mind, spawn_hand
+        from mindful_harness import Mind, spawn_hand
 
         envelope = _envelope({})  # we'll set structured separately
         envelope["structured_output"] = {
@@ -331,9 +331,6 @@ class TestExecuteHandLLM:
             mind,
             task="decide on Q1 investigation",
             framework="initial Q1 review",
-            kindfulness=KindfulnessVector(
-                toward="the team", disposition="curious"
-            ),
         )
 
         result = execute_hand_llm(hand)
