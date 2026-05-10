@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mindful Harness | Interactive Demo</title>
+  <style>
+    :root {
+      --bg: #fafaf7;
+      --ink: #2a2826;
+      --muted: #6b6660;
+      --accent: #4a6741;
+      --alarm: #a64242;
+      --rule: #d6d0c4;
+      --card: #ffffff;
+      --shadow: 0 1px 3px rgba(40, 36, 30, 0.06);
+      --highlight: #fff9e8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font: 15px/1.55 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+      background: var(--bg);
+      color: var(--ink);
+      margin: 0;
+      padding: 24px 16px 80px;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    header {
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 600;
+      margin: 0 0 4px;
+      letter-spacing: -0.01em;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      max-width: 700px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 1.6fr;
+      gap: 24px;
+    }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 16px 18px;
+      box-shadow: var(--shadow);
+    }
+    h2 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+      color: var(--muted);
+      margin: 0 0 12px;
+    }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--rule);
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .tab {
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .tab.active {
+      color: var(--ink);
+      border-bottom-color: var(--accent);
+    }
+    .tab:hover { color: var(--ink); }
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin: 8px 0 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    input[type="text"], textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--rule);
+      border-radius: 3px;
+      font: inherit;
+      font-size: 14px;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    textarea { min-height: 60px; resize: vertical; }
+    .conf-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .conf-row span {
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      font-size: 13px;
+      min-width: 40px;
+    }
+    input[type="range"] { width: 100%; }
+    button {
+      padding: 8px 16px;
+      background: var(--ink);
+      color: var(--bg);
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 14px;
+      margin-top: 12px;
+    }
+    button:hover { background: var(--accent); }
+    button.secondary {
+      background: var(--bg);
+      color: var(--muted);
+      border: 1px solid var(--rule);
+    }
+    button.secondary:hover { color: var(--ink); border-color: var(--ink); }
+    .item {
+      padding: 10px 12px;
+      border: 1px solid var(--rule);
+      border-radius: 3px;
+      margin-bottom: 8px;
+      background: var(--bg);
+      animation: highlightFade 1.5s ease-out;
+    }
+    @keyframes highlightFade {
+      from { background: var(--highlight); }
+      to { background: var(--bg); }
+    }
+    .item .key { font-weight: 600; font-size: 13px; }
+    .item .value { margin: 3px 0; }
+    .item .alts {
+      color: var(--muted);
+      font-size: 12px;
+      font-style: italic;
+    }
+    .item .conf {
+      display: inline-block;
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      padding: 1px 5px;
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+    }
+    .item .conf.alarm { color: var(--alarm); border-color: var(--alarm); }
+    ul.simple { list-style: none; padding: 0; margin: 0; }
+    ul.simple li {
+      padding: 6px 0;
+      border-bottom: 1px dashed var(--rule);
+      font-size: 14px;
+    }
+    ul.simple li:last-child { border-bottom: none; }
+    .empty { color: var(--muted); font-style: italic; font-size: 13px; }
+    section.mind-section { margin-bottom: 20px; }
+    .opportunity .enables {
+      color: var(--accent);
+      font-size: 12px;
+      margin-top: 3px;
+      padding-left: 10px;
+      border-left: 2px solid var(--accent);
+    }
+    .vitals {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+    }
+    .vital {
+      background: var(--bg);
+      border: 1px solid var(--rule);
+      border-radius: 3px;
+      padding: 8px 10px;
+    }
+    .vital .name {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .vital .number {
+      font-size: 20px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .alarm-banner {
+      background: #fff4f0;
+      border: 1px solid #e5c4ba;
+      color: var(--alarm);
+      padding: 10px 12px;
+      border-radius: 3px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    .footer {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid var(--rule);
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+    .footer a { color: var(--accent); }
+    .alts-input {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .alts-input input { flex: 1; }
+    .alts-input button { margin: 0; padding: 6px 10px; font-size: 13px; }
+    .help {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+      font-style: italic;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    code {
+      font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      background: var(--bg);
+      padding: 1px 5px;
+      border-radius: 2px;
+      border: 1px solid var(--rule);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Mindful Harness</h1>
+      <div class="subtitle">
+        A substrate for AI-native work, inspired by Ellen Langer's research on mindfulness.
+        Add beliefs, questions, observations, and opportunities to a sample Mind on the left;
+        watch its seven epistemic categories and vital signs update on the right.
+        Everything runs in your browser, nothing leaves this page.
+      </div>
+    </header>
+
+    <div class="layout">
+      <div class="panel">
+        <h2>Add to the Mind</h2>
+        <div class="tabs" id="tabs">
+          <div class="tab active" data-tab="belief">Belief</div>
+          <div class="tab" data-tab="question">Question</div>
+          <div class="tab" data-tab="notice">Interest</div>
+          <div class="tab" data-tab="wonder">Curiosity</div>
+          <div class="tab" data-tab="opp">Opportunity</div>
+        </div>
+
+        <div class="form" id="form-belief">
+          <label>Key (short identifier)</label>
+          <input type="text" id="belief-key" placeholder="e.g. Q1 trend">
+          <label>Value (in conditional language)</label>
+          <input type="text" id="belief-value" placeholder="e.g. revenue up 12%">
+          <label>Alternatives (at least two required)</label>
+          <div id="alts-list"></div>
+          <div class="alts-input">
+            <input type="text" id="alt-input" placeholder="e.g. flat with noise">
+            <button class="secondary" onclick="addAlt()">Add</button>
+          </div>
+          <label>Confidence <span id="conf-display">0.50</span></label>
+          <div class="conf-row">
+            <input type="range" id="belief-conf" min="0" max="1" step="0.05" value="0.5">
+          </div>
+          <p class="help">Three-or-more framings are enforced. Without alternatives, the value collapses to a binary.</p>
+          <button onclick="addBelief()">Add belief</button>
+        </div>
+
+        <div class="form" id="form-question" style="display:none">
+          <label>Question</label>
+          <input type="text" id="question-text" placeholder="e.g. what drove Q1 lift?">
+          <p class="help">Questions are first-class state. The Mind holds them until evidence, inquiry, or human input resolves them.</p>
+          <button onclick="addQuestion()">Open question</button>
+        </div>
+
+        <div class="form" id="form-notice" style="display:none">
+          <label>Interest (an anomaly or deviation)</label>
+          <input type="text" id="notice-text" placeholder="e.g. support load dropped while NPS rose">
+          <p class="help">An interest is something the Mind has noticed but not acted on. Interests decay unless reinforced.</p>
+          <button onclick="addInterest()">Notice it</button>
+        </div>
+
+        <div class="form" id="form-wonder" style="display:none">
+          <label>Curiosity (a directed thread to follow)</label>
+          <input type="text" id="wonder-text" placeholder="e.g. how does Tuesday cohort differ?">
+          <p class="help">A curiosity is intent-driven, distinct from an interest (anomaly-driven).</p>
+          <button onclick="addCuriosity()">Wonder about it</button>
+        </div>
+
+        <div class="form" id="form-opp" style="display:none">
+          <label>Opportunity</label>
+          <input type="text" id="opp-text" placeholder="e.g. parallel-test the new vendor API">
+          <label>What this enables (kindfully framed, for the counterpart)</label>
+          <input type="text" id="opp-enables" placeholder="e.g. empirical risk assessment, preserves team optionality">
+          <p class="help">Opportunities are framed by what they enable for the counterpart, not what they extract. Kindfulness vector at work.</p>
+          <button onclick="addOpportunity()">See opportunity</button>
+        </div>
+
+        <div class="controls">
+          <button class="secondary" onclick="loadSample()">Load sample Mind</button>
+          <button class="secondary" onclick="clearMind()">Clear all</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Mind state</h2>
+        <div id="alarm-banner-container"></div>
+
+        <section class="mind-section">
+          <h2>Vital signs</h2>
+          <div class="vitals" id="vitals"></div>
+        </section>
+
+        <section class="mind-section">
+          <h2>Beliefs</h2>
+          <div id="beliefs"></div>
+        </section>
+
+        <section class="mind-section">
+          <h2>Open questions</h2>
+          <div id="questions"></div>
+        </section>
+
+        <section class="mind-section">
+          <h2>Interests</h2>
+          <div id="interests"></div>
+        </section>
+
+        <section class="mind-section">
+          <h2>Curiosities</h2>
+          <div id="curiosities"></div>
+        </section>
+
+        <section class="mind-section">
+          <h2>Opportunities</h2>
+          <div id="opportunities"></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="footer">
+      Mindful Harness, a substrate inspired by Ellen Langer's mindfulness research, coined with Philip Maymin.<br>
+      This demo runs entirely in your browser. The full harness (Python library, CLI, LLM integration via Claude Code) lives at
+      <a href="https://github.com/philipmaymin/mindful-harness">github.com/philipmaymin/mindful-harness</a>.<br>
+      Outputs are conditional, not absolute.
+    </div>
+  </div>
+
+  <script>
+    const CERTAINTY_THRESHOLD = 0.9;
+    let mind = emptyMind();
+
+    function emptyMind() {
+      return { beliefs: {}, questions: [], interests: [], curiosities: [], opportunities: [] };
+    }
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        document.querySelectorAll('.form').forEach(f => f.style.display = 'none');
+        document.getElementById('form-' + tab.dataset.tab).style.display = 'block';
+      });
+    });
+
+    document.getElementById('belief-conf').addEventListener('input', function() {
+      document.getElementById('conf-display').textContent = parseFloat(this.value).toFixed(2);
+    });
+
+    let alts = [];
+    function addAlt() {
+      const input = document.getElementById('alt-input');
+      const val = input.value.trim();
+      if (!val) return;
+      alts.push(val);
+      input.value = '';
+      renderAlts();
+    }
+    function removeAlt(i) {
+      alts.splice(i, 1);
+      renderAlts();
+    }
+    function renderAlts() {
+      const list = document.getElementById('alts-list');
+      if (alts.length === 0) {
+        list.innerHTML = '<p class="help">no alternatives yet</p>';
+        return;
+      }
+      list.innerHTML = alts.map((a, i) =>
+        '<div style="display:flex; justify-content:space-between; align-items:center; padding: 4px 8px; border: 1px solid var(--rule); border-radius: 3px; margin-bottom: 4px; background: var(--bg);">' +
+          '<span style="font-size: 13px;">' + escapeHtml(a) + '</span>' +
+          '<button class="secondary" style="margin:0; padding: 2px 8px; font-size: 11px;" onclick="removeAlt(' + i + ')">x</button>' +
+        '</div>'
+      ).join('');
+    }
+    document.getElementById('alt-input').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); addAlt(); }
+    });
+    renderAlts();
+
+    function addBelief() {
+      const key = document.getElementById('belief-key').value.trim();
+      const value = document.getElementById('belief-value').value.trim();
+      const conf = parseFloat(document.getElementById('belief-conf').value);
+      if (!key) { alert('Belief key required.'); return; }
+      if (!value) { alert('Belief value required.'); return; }
+      if (alts.length < 2) {
+        alert('At least two alternatives required. Three framings minimum (value plus two alts). Two collapses to a binary.');
+        return;
+      }
+      mind.beliefs[key] = { value: value, confidence: conf, alternatives: alts.slice() };
+      document.getElementById('belief-key').value = '';
+      document.getElementById('belief-value').value = '';
+      document.getElementById('belief-conf').value = 0.5;
+      document.getElementById('conf-display').textContent = '0.50';
+      alts = [];
+      renderAlts();
+      render();
+    }
+    function addQuestion() {
+      const text = document.getElementById('question-text').value.trim();
+      if (!text) return;
+      mind.questions.push({ text: text });
+      document.getElementById('question-text').value = '';
+      render();
+    }
+    function addInterest() {
+      const text = document.getElementById('notice-text').value.trim();
+      if (!text) return;
+      mind.interests.push({ text: text });
+      document.getElementById('notice-text').value = '';
+      render();
+    }
+    function addCuriosity() {
+      const text = document.getElementById('wonder-text').value.trim();
+      if (!text) return;
+      mind.curiosities.push({ text: text });
+      document.getElementById('wonder-text').value = '';
+      render();
+    }
+    function addOpportunity() {
+      const text = document.getElementById('opp-text').value.trim();
+      const enables = document.getElementById('opp-enables').value.trim();
+      if (!text) return;
+      mind.opportunities.push({ text: text, enables: enables });
+      document.getElementById('opp-text').value = '';
+      document.getElementById('opp-enables').value = '';
+      render();
+    }
+
+    function clearMind() {
+      if (confirm('Clear the Mind?')) {
+        mind = emptyMind();
+        render();
+      }
+    }
+
+    function loadSample() {
+      mind = {
+        beliefs: {
+          'Q1 trend': {
+            value: 'revenue up 12%',
+            confidence: 0.7,
+            alternatives: ['flat with measurement noise', 'Q4 carryover effect']
+          },
+          'support load anomaly': {
+            value: 'dropped 23% while NPS rose 12 points',
+            confidence: 0.6,
+            alternatives: [
+              'could be retention-driven, not satisfaction-driven',
+              'could be ticket-classification change masking real volume'
+            ]
+          },
+          'vendor announced API': {
+            value: 'true (confirmed via partnerships email)',
+            confidence: 0.95,
+            alternatives: ['false', 'rumor not yet confirmed']
+          }
+        },
+        questions: [
+          { text: 'What drove the Q1 lift, given no marketing change?' },
+          { text: 'Does the new vendor API actually fit our integration pattern?' },
+          { text: 'Is the Acme down round a market signal or company-specific?' }
+        ],
+        interests: [
+          { text: 'support load dropped while NPS rose, same period, no obvious cause' },
+          { text: 'vendor reached out about a workaround they apparently noticed' },
+          { text: 'three enterprise customers asked about international expansion, same week' }
+        ],
+        curiosities: [
+          { text: 'how does Tuesday cohort retention compare to Monday\'s?' },
+          { text: 'what would the chambermaid framing tell us about the support drop?' }
+        ],
+        opportunities: [
+          {
+            text: 'Share Q1 metrics with vendor as market intelligence, not negotiation',
+            enables: 'vendor learns integration is a competitive feature, preserves their agency to design the API well'
+          },
+          {
+            text: 'Parallel test new vendor API in staging alongside existing webhook',
+            enables: 'empirical risk assessment instead of vendor-framed urgency'
+          },
+          {
+            text: 'Approach Acme for partnership not poaching',
+            enables: 'ecosystem partnership that preserves their agency under funding pressure'
+          }
+        ]
+      };
+      render();
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function(c) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c];
+      });
+    }
+
+    function render() {
+      const beliefsEl = document.getElementById('beliefs');
+      const keys = Object.keys(mind.beliefs);
+      if (keys.length === 0) {
+        beliefsEl.innerHTML = '<p class="empty">no beliefs yet</p>';
+      } else {
+        beliefsEl.innerHTML = keys.map(function(k) {
+          const c = mind.beliefs[k];
+          const alarm = c.confidence >= CERTAINTY_THRESHOLD ? ' alarm' : '';
+          const altsLine = c.alternatives.length ?
+            '<div class="alts">could also be: ' + c.alternatives.map(escapeHtml).join(' / ') + '</div>' : '';
+          return '<div class="item">' +
+            '<div class="key">' + escapeHtml(k) + '</div>' +
+            '<div class="value">could be ' + escapeHtml(c.value) + '</div>' +
+            altsLine +
+            '<span class="conf' + alarm + '">conf ' + (c.confidence * 100).toFixed(0) + '%</span>' +
+          '</div>';
+        }).join('');
+      }
+
+      renderSimpleList('questions', mind.questions, 'no questions open yet');
+      renderSimpleList('interests', mind.interests, 'nothing notable yet');
+      renderSimpleList('curiosities', mind.curiosities, 'no threads to follow yet');
+
+      const oppEl = document.getElementById('opportunities');
+      if (mind.opportunities.length === 0) {
+        oppEl.innerHTML = '<p class="empty">no opportunities surfaced yet</p>';
+      } else {
+        oppEl.innerHTML = mind.opportunities.map(function(o) {
+          return '<div class="item opportunity">' +
+            '<div>' + escapeHtml(o.text) + '</div>' +
+            (o.enables ? '<div class="enables">enables: ' + escapeHtml(o.enables) + '</div>' : '') +
+          '</div>';
+        }).join('');
+      }
+
+      const alarms = Object.entries(mind.beliefs).filter(function(entry) {
+        return entry[1].confidence >= CERTAINTY_THRESHOLD;
+      });
+      const banner = document.getElementById('alarm-banner-container');
+      if (alarms.length > 0) {
+        banner.innerHTML = '<div class="alarm-banner">' +
+          '<strong>Certainty alarms.</strong> These beliefs crossed the threshold where confidence is itself the signal of mindlessness. Interrogate before trusting.' +
+          '<ul style="margin: 6px 0 0; padding-left: 18px;">' +
+            alarms.map(function(entry) {
+              return '<li>' + escapeHtml(entry[0]) + ' (conf ' + (entry[1].confidence * 100).toFixed(0) + '%)</li>';
+            }).join('') +
+          '</ul>' +
+        '</div>';
+      } else {
+        banner.innerHTML = '';
+      }
+
+      const totalBeliefs = keys.length;
+      const totalAlts = keys.reduce(function(sum, k) { return sum + mind.beliefs[k].alternatives.length; }, 0);
+      const avgAlts = totalBeliefs > 0 ? totalAlts / totalBeliefs : 0;
+      const vitals = {
+        'alt cardinality': avgAlts.toFixed(2),
+        'open questions': mind.questions.length,
+        'active interests': mind.interests.length,
+        'curiosities': mind.curiosities.length,
+        'opportunities': mind.opportunities.length,
+        'beliefs held': totalBeliefs
+      };
+      document.getElementById('vitals').innerHTML = Object.entries(vitals).map(function(entry) {
+        return '<div class="vital">' +
+          '<div class="name">' + escapeHtml(entry[0]) + '</div>' +
+          '<div class="number">' + escapeHtml(entry[1]) + '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    function renderSimpleList(id, items, emptyMessage) {
+      const el = document.getElementById(id);
+      if (items.length === 0) {
+        el.innerHTML = '<p class="empty">' + emptyMessage + '</p>';
+        return;
+      }
+      el.innerHTML = '<ul class="simple">' + items.map(function(i) {
+        return '<li>' + escapeHtml(i.text) + '</li>';
+      }).join('') + '</ul>';
+    }
+
+    render();
+  </script>
+</body>
+</html>

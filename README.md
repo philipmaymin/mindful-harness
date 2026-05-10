@@ -126,7 +126,15 @@ for name, c in mind.certainty_alarms():
 
 ## Status
 
-v0.0.6, pre-alpha. The architecture is in place; the structural locks are in place; the LLM integration works; the CLI is usable. What is not yet built: real firehose connectors (IMAP, RSS, file watchers), the kindful advocate as a separately-instantiated LLM process, an interactive web UI beyond the static HTML render.
+v0.0.6, pre-alpha. The architecture is in place; the structural locks are in place; the LLM integration works; the CLI is usable. What is not yet built: real firehose connectors (IMAP, RSS, file watchers), the kindful advocate as a separately-instantiated LLM process, a backend-driven web app.
+
+## Interactive demo
+
+A standalone in-browser demo lives at `docs/index.html` and is published via GitHub Pages at:
+
+**https://philipmaymin.github.io/mindful-harness/**
+
+Add beliefs, questions, observations, and opportunities; watch the seven epistemic categories and vital signs update. Three-or-more enforcement is structural (the form rejects a belief with fewer than two alternatives). The certainty alarm banner fires when a belief crosses confidence 0.9. No backend, no install, no API key.
 
 See `SPEC.md` for the full design and the Langer sources behind each primitive.
 
