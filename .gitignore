@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.coverage
+.venv/
+venv/
+.env
+.DS_Store
+*.swp
+node_modules/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+
+# Generated artifacts from the CLI / examples
+mind.html
+mind.json
+
