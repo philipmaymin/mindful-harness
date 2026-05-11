@@ -239,21 +239,27 @@ def _run_claude(
     except subprocess.TimeoutExpired as e:
         raise ClaudeCLIError(f"claude -p timed out after {timeout}s") from e
 
+    debug = os.environ.get("MINDFUL_HARNESS_DEBUG")
+
     if completed.returncode != 0:
-        raise ClaudeCLIError(
-            f"claude -p exited {completed.returncode}: "
-            f"stderr={completed.stderr.strip()[:500]}"
-        )
+        msg = f"claude -p exited {completed.returncode}"
+        if debug:
+            msg += f": stderr={completed.stderr.strip()[:500]}"
+        raise ClaudeCLIError(msg)
 
     try:
         envelope = json.loads(completed.stdout)
     except json.JSONDecodeError as e:
-        raise ClaudeCLIError(
-            f"claude -p output is not valid JSON: {completed.stdout[:500]}"
-        ) from e
+        msg = "claude -p output is not valid JSON"
+        if debug:
+            msg += f": {completed.stdout[:500]}"
+        raise ClaudeCLIError(msg) from e
 
     if envelope.get("is_error"):
-        raise ClaudeCLIError(f"claude reported error: {envelope}")
+        msg = "claude reported error"
+        if debug:
+            msg += f": {envelope}"
+        raise ClaudeCLIError(msg)
 
     return envelope
 
@@ -544,4 +550,5 @@ def execute_hand_llm(
         framework=hand.framework,
         confidence=float(structured["confidence"]),
         process_trail=list(hand.process_trail) + [f"reasoning: {structured.get('reasoning', '')[:200]}"],
+        would_revise_if=list(structured.get("would_revise_if", [])),
     )

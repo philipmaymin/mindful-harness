@@ -57,12 +57,17 @@ def detect_drift(
     """
     now = time.time()
 
-    # For v0.0.x, beliefs/knowledge don't carry their own timestamps;
-    # we approximate by treating all as the same age (the time since
-    # the Mind was created or last cleared). Real drift detection
-    # arrives when Conditional gains a last_reviewed field.
     stale_beliefs: list[tuple[str, float]] = []
+    for key, c in mind.beliefs.items():
+        age = now - c.last_reviewed
+        if age > belief_threshold_seconds:
+            stale_beliefs.append((key, age))
+
     stale_knowledge: list[tuple[str, float]] = []
+    for key, c in mind.knowledge.items():
+        age = now - c.last_reviewed
+        if age > knowledge_threshold_seconds:
+            stale_knowledge.append((key, age))
 
     stale_decisions: list[tuple[str, float]] = []
     for d in mind.decisions:
@@ -79,7 +84,9 @@ def detect_drift(
             aging_questions.append((q.text, age))
 
     candidates = (
-        [age for _, age in stale_decisions]
+        [age for _, age in stale_beliefs]
+        + [age for _, age in stale_knowledge]
+        + [age for _, age in stale_decisions]
         + [age for _, age in aging_questions]
     )
     overall_oldest = max(candidates, default=0.0)

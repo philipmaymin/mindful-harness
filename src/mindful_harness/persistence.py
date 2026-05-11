@@ -45,17 +45,21 @@ def _serialize_conditional(c: Conditional[Any]) -> dict[str, Any]:
         "alternatives": list(c.alternatives),
         "framing": c.framing,
         "reversion_trigger": c.reversion_trigger,
+        "last_reviewed": c.last_reviewed,
     }
 
 
 def _deserialize_conditional(d: dict[str, Any]) -> Conditional[Any]:
-    return Conditional(
+    c = Conditional(
         value=d["value"],
         confidence=float(d["confidence"]),
         alternatives=list(d.get("alternatives", [])),
         framing=d.get("framing", ""),
         reversion_trigger=d.get("reversion_trigger"),
     )
+    if "last_reviewed" in d:
+        c.last_reviewed = float(d["last_reviewed"])
+    return c
 
 
 def to_dict(mind: Mind) -> dict[str, Any]:
@@ -240,12 +244,25 @@ def from_dict(data: dict[str, Any]) -> Mind:
 def _file_lock(lock_path: Path):
     """Best-effort exclusive lock across processes on POSIX systems.
 
-    Falls back to a no-op on platforms without fcntl. Used so concurrent
-    CLI invocations cannot interleave load/mutate/save sequences and
-    lose updates.
+    The lock file is opened with O_NOFOLLOW on POSIX so a symlink at the
+    lock path cannot be followed to truncate an attacker-chosen
+    arbitrary file. On systems without O_NOFOLLOW or fcntl, falls back
+    to a best-effort open without locking.
+
+    The lock file is left in place after release so concurrent writers
+    cannot race on its creation.
     """
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_f = open(lock_path, "w")  # noqa: SIM115 - lifetime managed manually
+    flags = os.O_CREAT | os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(str(lock_path), flags, 0o600)
+    except OSError:
+        # If a symlink (or other) interferes, refuse rather than follow it.
+        yield
+        return
+    lock_f = os.fdopen(fd, "r+b")
     try:
         if fcntl is not None:
             try:
@@ -260,8 +277,6 @@ def _file_lock(lock_path: Path):
                     fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
         finally:
             lock_f.close()
-            with contextlib.suppress(OSError):
-                lock_path.unlink()
 
 
 def _restrict_dir_permissions(directory: Path) -> None:
@@ -271,39 +286,57 @@ def _restrict_dir_permissions(directory: Path) -> None:
             os.chmod(directory, 0o700)
 
 
+def _save_locked(mind: Mind, p: Path) -> None:
+    """Write Mind to p atomically. Caller must already hold the path lock."""
+    payload = json.dumps(to_dict(mind), indent=2, default=str).encode("utf-8")
+    fd, tmp_path_str = tempfile.mkstemp(
+        dir=p.parent, prefix=f".{p.name}.", suffix=".tmp"
+    )
+    tmp_path = Path(tmp_path_str)
+    try:
+        with os.fdopen(fd, "wb") as tmp_f:
+            tmp_f.write(payload)
+            tmp_f.flush()
+            os.fsync(tmp_f.fileno())
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, p)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            tmp_path.unlink()
+        raise
+
+
 def save(mind: Mind, path: str | Path) -> Path:
     """Save a Mind to a JSON file atomically with restrictive permissions.
 
     The file is written to a sibling temp file with mode 0600, then
     atomically renamed onto the target path. A `.lock` file in the
     parent directory serializes concurrent writers so two CLI runs
-    cannot lose each other's updates. Returns the resolved path.
+    cannot lose each other's updates.
+
+    The parent directory is chmod'd to 0700 ONLY if this call had to
+    create it. Pre-existing user directories are left as-is so a
+    `--state ~/shared/mind.json` does not silently lock other
+    collaborators out of `~/shared`.
+
+    Returns the resolved path.
     """
     p = Path(path).expanduser().resolve()
+    parent_existed = p.parent.exists()
     p.parent.mkdir(parents=True, exist_ok=True)
-    _restrict_dir_permissions(p.parent)
-
-    payload = json.dumps(to_dict(mind), indent=2, default=str).encode("utf-8")
+    if not parent_existed:
+        _restrict_dir_permissions(p.parent)
 
     lock_path = p.with_name(p.name + ".lock")
     with _file_lock(lock_path):
-        fd, tmp_path_str = tempfile.mkstemp(
-            dir=p.parent, prefix=f".{p.name}.", suffix=".tmp"
-        )
-        tmp_path = Path(tmp_path_str)
-        try:
-            with os.fdopen(fd, "wb") as tmp_f:
-                tmp_f.write(payload)
-                tmp_f.flush()
-                os.fsync(tmp_f.fileno())
-            os.chmod(tmp_path, 0o600)
-            os.replace(tmp_path, p)
-        except BaseException:
-            with contextlib.suppress(FileNotFoundError):
-                tmp_path.unlink()
-            raise
+        _save_locked(mind, p)
 
     return p
+
+
+def _load_locked(p: Path) -> Mind:
+    """Read Mind from p. Caller must already hold the path lock if it exists."""
+    return from_dict(json.loads(p.read_text()))
 
 
 def load(path: str | Path) -> Mind:
@@ -312,8 +345,8 @@ def load(path: str | Path) -> Mind:
     lock_path = p.with_name(p.name + ".lock")
     if p.parent.exists():
         with _file_lock(lock_path):
-            return from_dict(json.loads(p.read_text()))
-    return from_dict(json.loads(p.read_text()))
+            return _load_locked(p)
+    return _load_locked(p)
 
 
 def load_or_new(path: str | Path) -> Mind:
@@ -322,3 +355,33 @@ def load_or_new(path: str | Path) -> Mind:
     if p.exists():
         return load(p)
     return Mind()
+
+
+@contextlib.contextmanager
+def mind_session(path: str | Path):
+    """Yield a Mind, persist it back under a single lock on exit.
+
+    Wraps load-mutate-save inside one acquisition of the path lock so
+    concurrent CLI invocations cannot interleave and lose each other's
+    updates. The Mind is loaded from disk on entry (or fresh if no file
+    exists) and saved on normal exit. On exception, the original file
+    is left intact (the lock is released without saving).
+
+    Usage::
+
+        with mind_session("~/.mindful-harness/mind.json") as mind:
+            mind.believe(...)
+            mind.ask(...)
+        # state is now persisted atomically with the changes applied
+    """
+    p = Path(path).expanduser().resolve()
+    parent_existed = p.parent.exists()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if not parent_existed:
+        _restrict_dir_permissions(p.parent)
+
+    lock_path = p.with_name(p.name + ".lock")
+    with _file_lock(lock_path):
+        mind = _load_locked(p) if p.exists() else Mind()
+        yield mind
+        _save_locked(mind, p)

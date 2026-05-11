@@ -190,9 +190,27 @@ class TestRunClaude:
 
     @patch("mindful_harness.llm.subprocess.run")
     def test_raises_on_nonzero_exit(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = _completed_process("", returncode=1, stderr="boom")
-        with pytest.raises(ClaudeCLIError, match="exited 1"):
+        mock_run.return_value = _completed_process(
+            "", returncode=1, stderr="sensitive: user@example.com sent secret"
+        )
+        with pytest.raises(ClaudeCLIError) as exc_info:
             _run_claude(user_prompt="test")
+        # Without DEBUG, error message must NOT leak stderr content.
+        assert "sensitive" not in str(exc_info.value)
+        assert "exited 1" in str(exc_info.value)
+
+    @patch("mindful_harness.llm.subprocess.run")
+    def test_debug_env_var_surfaces_raw_error(
+        self, mock_run: MagicMock, monkeypatch
+    ) -> None:
+        mock_run.return_value = _completed_process(
+            "", returncode=1, stderr="sensitive: user@example.com sent secret"
+        )
+        monkeypatch.setenv("MINDFUL_HARNESS_DEBUG", "1")
+        with pytest.raises(ClaudeCLIError) as exc_info:
+            _run_claude(user_prompt="test")
+        # With DEBUG set, raw stderr is surfaced.
+        assert "sensitive" in str(exc_info.value)
 
     @patch("mindful_harness.llm.subprocess.run")
     def test_raises_on_invalid_json(self, mock_run: MagicMock) -> None:
@@ -373,3 +391,40 @@ class TestExecuteHandLLM:
         assert len(result.framings) == 3
         assert result.confidence == 0.6
         assert "LLM execution complete" in hand.process_trail[-1]
+
+    @patch("mindful_harness.llm._run_claude")
+    def test_would_revise_if_propagates_to_hand_result(
+        self, mock_run: MagicMock
+    ) -> None:
+        """The LLM's would_revise_if must flow into HandResult, not be dropped."""
+        from mindful_harness import Mind, spawn_hand
+
+        envelope = _envelope({})
+        envelope["structured_output"] = {
+            "chosen": "ship the patch",
+            "rejected_alternatives": ["delay", "rollback"],
+            "framings": {
+                "engineering": "treat as a routine cleanup",
+                "product": "treat as a customer-impact reduction",
+                "ops": "treat as a stability investment",
+            },
+            "confidence": 0.7,
+            "reasoning": "Q1 evidence supports it.",
+            "would_revise_if": [
+                "if customer error rate rises above 0.5%",
+                "if support ticket volume reverses",
+            ],
+        }
+        mock_run.return_value = envelope
+
+        mind = Mind()
+        hand = spawn_hand(mind, task="patch decision", framework="ship-it")
+        result = execute_hand_llm(hand)
+
+        assert result.would_revise_if == [
+            "if customer error rate rises above 0.5%",
+            "if support ticket volume reverses",
+        ]
+        # And to_decision uses those triggers as the default.
+        decision = result.to_decision()
+        assert "customer error rate" in decision.reversion_triggers[0]

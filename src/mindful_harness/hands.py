@@ -33,6 +33,11 @@ class HandResult:
     Mindful Body p.42): the receiver picks which framing they will act
     under, knowing it is a choice rather than a default. A result with
     fewer than three framings is a type error.
+
+    `would_revise_if` carries the LLM-produced reversion triggers (the
+    "decisions held loosely" primitive at the per-action level); these
+    flow into `Decision.reversion_triggers` when the result is
+    committed to the Mind.
     """
 
     chosen: Any
@@ -43,6 +48,7 @@ class HandResult:
     process_trail: list[str] = field(default_factory=list)
     advocate_critique: str | None = None
     questioner_challenges: list[str] = field(default_factory=list)
+    would_revise_if: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.confidence <= 1.0:
@@ -61,13 +67,25 @@ class HandResult:
                 "Invisible frameworks are how the expert trap installs itself."
             )
 
-    def to_decision(self, reversion_triggers: list[str]) -> Decision:
-        """Convert to a Decision for committing to the Mind."""
+    def to_decision(self, reversion_triggers: list[str] | None = None) -> Decision:
+        """Convert to a Decision for committing to the Mind.
+
+        Defaults reversion_triggers to whatever the Hand itself surfaced
+        in `would_revise_if`, so a Decision committed from a HandResult
+        is held loosely by default.
+        """
+        triggers = list(reversion_triggers) if reversion_triggers else list(self.would_revise_if)
+        if not triggers:
+            raise ValueError(
+                "Decision requires at least one reversion trigger. "
+                "Pass reversion_triggers explicitly or have the Hand "
+                "produce would_revise_if."
+            )
         return Decision(
             chosen=self.chosen,
             rejected=list(self.rejected_alternatives),
             framing=self.framework,
-            reversion_triggers=reversion_triggers,
+            reversion_triggers=triggers,
             confidence=self.confidence,
         )
 

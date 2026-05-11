@@ -23,14 +23,16 @@ Usage examples:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import sys
+import tempfile
 import webbrowser
 from pathlib import Path
 
-from mindful_harness import Conditional, FirehoseItem, Mind
+from mindful_harness import Conditional, FirehoseItem
 from mindful_harness.drift import detect_drift
-from mindful_harness.persistence import load_or_new, save
+from mindful_harness.persistence import load_or_new, mind_session
 from mindful_harness.viz import render_mind_html, render_mind_json
 
 DEFAULT_STATE_PATH = Path(
@@ -44,16 +46,27 @@ def _state_path(args: argparse.Namespace) -> Path:
     return Path(args.state).expanduser() if args.state else DEFAULT_STATE_PATH
 
 
-def _load(args: argparse.Namespace) -> Mind:
-    return load_or_new(_state_path(args))
-
-
-def _save(args: argparse.Namespace, mind: Mind) -> Path:
-    return save(mind, _state_path(args))
+def _write_html_safely(path: Path, html: str) -> None:
+    """Write an HTML export with 0600 permissions via atomic temp + replace."""
+    path = path.expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_str = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    tmp = Path(tmp_str)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(html)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            tmp.unlink()
+        raise
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    mind = _load(args)
+    mind = load_or_new(_state_path(args))
     signs = mind.vital_signs()
     alarms = mind.certainty_alarms()
     print(f"State: {_state_path(args)}")
@@ -70,7 +83,6 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_ingest(args: argparse.Namespace) -> int:
-    mind = _load(args)
     if args.from_stdin:
         content = sys.stdin.read()
     elif args.content:
@@ -80,36 +92,44 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         return 2
 
     item = FirehoseItem(source=args.source, content=content)
+    debug = os.environ.get("MINDFUL_HARNESS_DEBUG")
 
-    if args.with_llm:
-        try:
-            from mindful_harness.llm import ingest as llm_ingest
+    with mind_session(_state_path(args)) as mind:
+        if args.with_llm:
+            try:
+                from mindful_harness.llm import ingest as llm_ingest
 
-            distillation = llm_ingest(item, mind, model=args.model)
-            print(
-                f"Distilled via {args.model} "
-                f"({distillation.get('_cost_usd', 0):.4f} USD, "
-                f"{distillation.get('_duration_ms', 0)/1000:.1f}s)"
-            )
-        except Exception as e:
-            # apply_distillation is build-then-commit: on failure the
-            # Mind has NOT been mutated, so it is safe to fall back to a
-            # plain ingest without double-logging the item.
-            print(f"LLM ingest failed: {e}", file=sys.stderr)
-            print("Item added to firehose without distillation.", file=sys.stderr)
+                distillation = llm_ingest(item, mind, model=args.model)
+                print(
+                    f"Distilled via {args.model} "
+                    f"({distillation.get('_cost_usd', 0):.4f} USD, "
+                    f"{distillation.get('_duration_ms', 0)/1000:.1f}s)"
+                )
+            except Exception as e:
+                # apply_distillation is build-then-commit: on failure
+                # the Mind has NOT been mutated, so it is safe to fall
+                # back to a plain ingest without double-logging the item.
+                msg = f"LLM ingest failed: {type(e).__name__}"
+                if debug:
+                    msg += f": {e}"
+                print(msg, file=sys.stderr)
+                print(
+                    "Item added to firehose without distillation.",
+                    file=sys.stderr,
+                )
+                mind.ingest(item)
+        else:
             mind.ingest(item)
-    else:
-        mind.ingest(item)
-        print(f"Ingested item from {args.source} (no distillation).")
-
-    _save(args, mind)
+            print(f"Ingested item from {args.source} (no distillation).")
     return 0
 
 
 def cmd_believe(args: argparse.Namespace) -> int:
-    mind = _load(args)
     if len(args.alts) < 2:
-        print("believe requires at least two alternatives (--alt ... --alt ...)", file=sys.stderr)
+        print(
+            "believe requires at least two alternatives (--alt ... --alt ...)",
+            file=sys.stderr,
+        )
         return 2
 
     c = Conditional(
@@ -119,44 +139,41 @@ def cmd_believe(args: argparse.Namespace) -> int:
         framing=args.framing or "",
         reversion_trigger=args.revise_if,
     )
-    mind.believe(args.key, c)
-    _save(args, mind)
+    with mind_session(_state_path(args)) as mind:
+        mind.believe(args.key, c)
     print(f"Set belief {args.key!r}: could be {args.value!r} (conf {args.confidence:.2f})")
     return 0
 
 
 def cmd_ask(args: argparse.Namespace) -> int:
-    mind = _load(args)
-    q = mind.ask(args.text, routed_to=args.routed_to)
-    _save(args, mind)
+    with mind_session(_state_path(args)) as mind:
+        q = mind.ask(args.text, routed_to=args.routed_to)
     print(f"Opened question: {q.text}")
     return 0
 
 
 def cmd_notice(args: argparse.Namespace) -> int:
-    mind = _load(args)
-    i = mind.notice(args.text)
-    _save(args, mind)
+    with mind_session(_state_path(args)) as mind:
+        i = mind.notice(args.text)
     print(f"Noticed: {i.text} (intensity {i.intensity:.2f})")
     return 0
 
 
 def cmd_wonder(args: argparse.Namespace) -> int:
-    mind = _load(args)
-    c = mind.wonder(args.text)
-    _save(args, mind)
+    with mind_session(_state_path(args)) as mind:
+        c = mind.wonder(args.text)
     print(f"Wondering: {c.text}")
     return 0
 
 
 def cmd_show(args: argparse.Namespace) -> int:
-    mind = _load(args)
+    mind = load_or_new(_state_path(args))
     if args.json:
         print(render_mind_json(mind))
         return 0
     html = render_mind_html(mind, title=args.title or "Mind")
     output = Path(args.output) if args.output else Path.cwd() / "mind.html"
-    output.write_text(html)
+    _write_html_safely(output, html)
     print(f"Rendered to {output.resolve()}")
     if args.open:
         webbrowser.open(f"file://{output.resolve()}")
@@ -164,14 +181,14 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 
 def cmd_vitals(args: argparse.Namespace) -> int:
-    mind = _load(args)
+    mind = load_or_new(_state_path(args))
     for name, value in mind.vital_signs().items():
         print(f"{name:30s} {value:>8.2f}")
     return 0
 
 
 def cmd_alarms(args: argparse.Namespace) -> int:
-    mind = _load(args)
+    mind = load_or_new(_state_path(args))
     alarms = mind.certainty_alarms()
     if not alarms:
         print("No certainty alarms.")
@@ -184,8 +201,16 @@ def cmd_alarms(args: argparse.Namespace) -> int:
 
 
 def cmd_drift(args: argparse.Namespace) -> int:
-    mind = _load(args)
+    mind = load_or_new(_state_path(args))
     report = detect_drift(mind)
+    print(f"Stale beliefs: {len(report.stale_beliefs)}")
+    for key, age in report.stale_beliefs:
+        days = age / 86400.0
+        print(f"  {key}: {days:.1f} days old")
+    print(f"Stale knowledge: {len(report.stale_knowledge)}")
+    for key, age in report.stale_knowledge:
+        days = age / 86400.0
+        print(f"  {key}: {days:.1f} days old")
     print(f"Stale decisions: {len(report.stale_decisions)}")
     for chosen, age in report.stale_decisions:
         days = age / 86400.0

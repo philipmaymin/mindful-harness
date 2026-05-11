@@ -2,16 +2,61 @@
 
 import time
 
-from mindful_harness import Decision, Mind
+from mindful_harness import Conditional, Decision, Mind
 from mindful_harness.drift import detect_drift
 
 
 class TestDriftReport:
     def test_empty_mind_has_no_drift(self) -> None:
         report = detect_drift(Mind())
+        assert report.stale_beliefs == []
+        assert report.stale_knowledge == []
         assert report.stale_decisions == []
         assert report.aging_questions == []
         assert report.overall_oldest == 0.0
+
+    def test_old_belief_flagged(self) -> None:
+        m = Mind()
+        m.believe(
+            "stale-belief",
+            Conditional(value="X", confidence=0.5, alternatives=["Y", "Z"]),
+        )
+        m.beliefs["stale-belief"].last_reviewed = time.time() - 2 * 86400.0
+        report = detect_drift(m, belief_threshold_seconds=86400.0)
+        assert len(report.stale_beliefs) == 1
+        assert report.stale_beliefs[0][0] == "stale-belief"
+
+    def test_fresh_belief_not_flagged(self) -> None:
+        m = Mind()
+        m.believe(
+            "fresh-belief",
+            Conditional(value="X", confidence=0.5, alternatives=["Y", "Z"]),
+        )
+        report = detect_drift(m, belief_threshold_seconds=86400.0)
+        assert report.stale_beliefs == []
+
+    def test_old_knowledge_flagged(self) -> None:
+        m = Mind()
+        m.know(
+            "stale-knowledge",
+            Conditional(value="X", confidence=0.9, alternatives=["Y", "Z"]),
+        )
+        m.knowledge["stale-knowledge"].last_reviewed = time.time() - 30 * 86400.0
+        report = detect_drift(m, knowledge_threshold_seconds=7 * 86400.0)
+        assert len(report.stale_knowledge) == 1
+        assert report.stale_knowledge[0][0] == "stale-knowledge"
+
+    def test_touch_resets_drift_clock(self) -> None:
+        m = Mind()
+        m.believe(
+            "touched",
+            Conditional(value="X", confidence=0.5, alternatives=["Y", "Z"]),
+        )
+        m.beliefs["touched"].last_reviewed = time.time() - 2 * 86400.0
+        # Touch resets last_reviewed to now.
+        m.beliefs["touched"].touch()
+        report = detect_drift(m, belief_threshold_seconds=86400.0)
+        assert report.stale_beliefs == []
 
     def test_recent_decision_not_flagged(self) -> None:
         m = Mind()

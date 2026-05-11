@@ -18,6 +18,7 @@ from mindful_harness.persistence import (
     from_dict,
     load,
     load_or_new,
+    mind_session,
     save,
     to_dict,
 )
@@ -188,9 +189,11 @@ class TestFileSecurityAndAtomicity:
     ) -> None:
         path = tmp_path / "mind.json"
         save(populated_mind, path)
+        # Lock files are intentionally left in place so concurrent
+        # writers cannot race on lock-file creation (symlink-safe fix).
+        # We only assert that no .tmp files leak.
         leftovers = [
-            p for p in tmp_path.iterdir()
-            if p.name.endswith(".tmp") or p.name.endswith(".lock")
+            p for p in tmp_path.iterdir() if p.name.endswith(".tmp")
         ]
         assert leftovers == []
 
@@ -203,12 +206,12 @@ class TestFileSecurityAndAtomicity:
         original_bytes = path.read_bytes()
 
         # Force the temp-file write to fail.
-        import os as _os
+        import mindful_harness.persistence as persistence_mod
 
         def boom(src, dst):
             raise RuntimeError("simulated write failure")
 
-        monkeypatch.setattr(_os, "replace", boom)
+        monkeypatch.setattr(persistence_mod.os, "replace", boom)
 
         with pytest.raises(RuntimeError):
             # Mutate so the save would otherwise change the file.
@@ -217,3 +220,57 @@ class TestFileSecurityAndAtomicity:
 
         # File on disk is the original, not partial.
         assert path.read_bytes() == original_bytes
+
+    def test_preexisting_parent_directory_not_chmodded(
+        self, populated_mind: Mind, tmp_path: Path
+    ) -> None:
+        """save() must not silently lock down a parent directory the user already had."""
+        import os
+        import stat
+        # tmp_path is created by pytest; treat it as the user's shared dir.
+        original_mode = stat.S_IMODE(os.stat(tmp_path).st_mode)
+        path = tmp_path / "mind.json"
+        save(populated_mind, path)
+        new_mode = stat.S_IMODE(os.stat(tmp_path).st_mode)
+        assert new_mode == original_mode, (
+            f"save() unexpectedly chmodded a pre-existing parent: {oct(original_mode)} -> {oct(new_mode)}"
+        )
+
+    def test_newly_created_parent_directory_is_chmodded_0700(
+        self, populated_mind: Mind, tmp_path: Path
+    ) -> None:
+        """save() creates its own dedicated state directory at 0700."""
+        import os
+        import stat
+        path = tmp_path / "new-state-dir" / "mind.json"
+        assert not path.parent.exists()
+        save(populated_mind, path)
+        mode = stat.S_IMODE(os.stat(path.parent).st_mode)
+        assert mode == 0o700
+
+
+class TestMindSession:
+    def test_session_persists_changes_on_normal_exit(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "mind.json"
+        with mind_session(path) as mind:
+            mind.ask("first question")
+        # Reload from disk and confirm.
+        mind = load_or_new(path)
+        assert any("first question" == q.text for q in mind.questions)
+
+    def test_session_skips_save_on_exception(self, tmp_path: Path) -> None:
+        path = tmp_path / "mind.json"
+        with mind_session(path) as mind:
+            mind.ask("committed")
+        # First session committed.
+        with pytest.raises(RuntimeError):
+            with mind_session(path) as mind:
+                mind.ask("uncommitted")
+                raise RuntimeError("bail out before save")
+        # The uncommitted question is NOT persisted.
+        mind = load_or_new(path)
+        texts = {q.text for q in mind.questions}
+        assert "committed" in texts
+        assert "uncommitted" not in texts

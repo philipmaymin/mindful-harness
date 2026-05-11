@@ -31,7 +31,10 @@ class Conditional(Generic[T]):
 
     Encodes Langer's 'could be' versus 'is' intervention. Carries the
     value, its confidence, explicit alternatives, the framing under
-    which it holds, and the condition that would trigger revision.
+    which it holds, the condition that would trigger revision, and the
+    timestamp at which the value was last reviewed (used by drift
+    detection to flag aging claims).
+
     Constructing one with fewer than three total framings is a type
     error, not a runtime warning, because mindlessness creeps in
     silently when single-framed values propagate as facts.
@@ -42,6 +45,7 @@ class Conditional(Generic[T]):
     alternatives: list[T] = field(default_factory=list)
     framing: str = ""
     reversion_trigger: str | None = None
+    last_reviewed: float = field(default_factory=time.time)
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.confidence <= 1.0:
@@ -58,6 +62,10 @@ class Conditional(Generic[T]):
 
     def __str__(self) -> str:
         return f"could be {self.value!r} (confidence {self.confidence:.2f})"
+
+    def touch(self) -> None:
+        """Mark this Conditional as freshly reviewed (resets the drift clock)."""
+        self.last_reviewed = time.time()
 
 
 def is_certain(c: Conditional[T]) -> bool:

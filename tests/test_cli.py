@@ -136,6 +136,21 @@ class TestShow:
         content = output.read_text()
         assert "<!doctype html>" in content
 
+    def test_show_html_export_has_0600_permissions(
+        self, state_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Exported HTML can contain beliefs/questions/opportunities;
+        it must not be world-readable like the state file."""
+        import os
+        import stat
+        output = tmp_path / "exported.html"
+        run(state_path, "believe", "x", "secret-belief", "--alt", "a", "--alt", "b")
+        capsys.readouterr()
+        rc = run(state_path, "show", "--output", str(output))
+        assert rc == 0
+        mode = stat.S_IMODE(os.stat(output).st_mode)
+        assert mode == 0o600, f"expected 0600, got {oct(mode)}"
+
 
 class TestVitalsAndAlarms:
     def test_vitals(self, state_path: Path, capsys: pytest.CaptureFixture) -> None:

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mindful-harness"
-version = "0.0.8"
+version = "0.0.9"
 description = "A mindful substrate for AI-native work, inspired by Ellen Langer's research on mindfulness."
 authors = [{ name = "Philip Maymin" }]
 license = { text = "MIT" }
