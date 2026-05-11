@@ -37,7 +37,7 @@ from mindful_harness.primitives import (
 )
 from mindful_harness.viz import render_mind_html, render_mind_json
 
-__version__ = "0.0.10"
+__version__ = "0.0.11"
 
 __all__ = [
     "Advocate",

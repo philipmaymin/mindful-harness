@@ -118,7 +118,12 @@ def main() -> int:
     html = render_mind_html(mind, title="Founder Inbox, Mid-Q1")
 
     output_path = Path("mind.html")
-    output_path.write_text(html)
+    # Match the CLI's safer writer: refuse symlinked target, 0600 perms,
+    # atomic rename. Mind state in HTML form can contain beliefs and
+    # opportunities just as sensitive as the JSON state file.
+    from mindful_harness.cli import _write_html_safely
+
+    _write_html_safely(output_path, html)
 
     print(f"Mind state rendered to {output_path.resolve()}")
     print(f"  beliefs: {len(mind.beliefs)}")

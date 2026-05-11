@@ -46,6 +46,7 @@ class Conditional(Generic[T]):
     framing: str = ""
     reversion_trigger: str | None = None
     last_reviewed: float = field(default_factory=time.time)
+    provenance: str = "unspecified"
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.confidence <= 1.0:

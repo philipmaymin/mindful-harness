@@ -47,18 +47,29 @@ def _state_path(args: argparse.Namespace) -> Path:
 
 
 def _write_html_safely(path: Path, html: str) -> None:
-    """Write an HTML export with 0600 permissions via atomic temp + replace."""
-    path = path.expanduser().resolve()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_str = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-    )
+    """Write an HTML export with 0600 permissions via atomic temp + replace.
+
+    Refuses symlinked output paths so an attacker-planted symlink at
+    `mind.html` cannot redirect the write onto an arbitrary user-owned
+    file. Same defense as persistence.save() applies here because the
+    rendered HTML can contain beliefs/questions/opportunities just as
+    sensitive as the state file.
+    """
+    p_user = path.expanduser()
+    if p_user.is_symlink():
+        raise PermissionError(
+            f"refusing to write HTML export to symlinked path: {p_user}. "
+            "Remove the symlink or choose a non-symlinked path."
+        )
+    p = p_user.resolve()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_str = tempfile.mkstemp(dir=p.parent, prefix=f".{p.name}.", suffix=".tmp")
     tmp = Path(tmp_str)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(html)
         os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
+        os.replace(tmp, p)
     except BaseException:
         with contextlib.suppress(FileNotFoundError):
             tmp.unlink()
@@ -103,11 +114,8 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         return 0
 
     # LLM path: do NOT hold the state lock during the (potentially
-    # 120s+) external call. Snapshot under lock, release for the call,
-    # reacquire to apply. apply_distillation is build-then-commit so
-    # a malformed payload leaves the Mind untouched, and the snapshot
-    # being slightly stale relative to a concurrent writer is fine
-    # because apply only appends new items.
+    # 120s+) external call. Snapshot under lock for context, release
+    # for the call, reacquire to apply.
     snapshot = load_or_new(state)
 
     from mindful_harness.llm import (
@@ -133,9 +141,39 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             mind.ingest(item)
         return 0
 
+    # Apply phase: re-acquire the lock and check for keys the
+    # snapshot did not have. For beliefs and knowledge, the
+    # distillation might overwrite entries another concurrent writer
+    # added in the meantime. Skip overwriting any belief/knowledge
+    # key whose current confidence is higher than ours; otherwise
+    # commit. This is best-effort conflict resolution; a stronger
+    # design would attach versions to each entry.
     with mind_session(state) as mind:
+        # Filter beliefs/knowledge against the live Mind to avoid
+        # clobbering higher-confidence updates that arrived between
+        # snapshot and apply.
+        _drop_lower_confidence_overwrites(distillation, mind)
         apply_distillation(distillation, mind, item)
     return 0
+
+
+def _drop_lower_confidence_overwrites(distillation: dict, live_mind) -> None:
+    """In-place mutate distillation to skip belief/knowledge overwrites
+    that would lower confidence relative to what the live Mind already
+    has. Mitigates lost-update races on concurrent LLM ingests."""
+    for kind in ("belief_updates", "knowledge_updates"):
+        updates = distillation.get(kind, [])
+        target = live_mind.beliefs if kind == "belief_updates" else live_mind.knowledge
+        filtered = []
+        for u in updates:
+            key = (u.get("key") or "").strip()
+            if key and key in target:
+                live_conf = target[key].confidence
+                new_conf = float(u.get("confidence", 0.5))
+                if new_conf < live_conf:
+                    continue  # don't clobber a higher-confidence concurrent write
+            filtered.append(u)
+        distillation[kind] = filtered
 
 
 def cmd_believe(args: argparse.Namespace) -> int:
