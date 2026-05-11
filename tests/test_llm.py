@@ -161,7 +161,7 @@ def _completed_process(stdout: str, returncode: int = 0, stderr: str = "") -> Ma
 
 
 class TestRunClaude:
-    @patch("mindful_harness.llm.subprocess.run")
+    @patch("mindful_harness.llm._run_subprocess_bounded")
     def test_passes_required_args(
         self, mock_run: MagicMock, well_formed_distillation: dict
     ) -> None:
@@ -169,14 +169,14 @@ class TestRunClaude:
             json.dumps(_envelope(well_formed_distillation))
         )
         _run_claude(user_prompt="test prompt", model="haiku")
-        args = mock_run.call_args[0][0]
-        kwargs = mock_run.call_args[1]
+        args = mock_run.call_args.args[0]
+        kwargs = mock_run.call_args.kwargs
         assert args[0] == "claude"
         assert "-p" in args
-        # User prompt MUST go via stdin, not argv — preventing exposure
-        # through process listings on shared hosts.
+        # User prompt MUST go via stdin (input_text kwarg), not argv —
+        # preventing exposure through process listings on shared hosts.
         assert "test prompt" not in args
-        assert kwargs.get("input") == "test prompt"
+        assert kwargs.get("input_text") == "test prompt"
         assert "--system-prompt" in args
         assert SYSTEM_PROMPT in args
         assert "--tools" in args
@@ -188,7 +188,7 @@ class TestRunClaude:
         assert "--output-format" in args
         assert "json" in args
 
-    @patch("mindful_harness.llm.subprocess.run")
+    @patch("mindful_harness.llm._run_subprocess_bounded")
     def test_raises_on_nonzero_exit(self, mock_run: MagicMock) -> None:
         mock_run.return_value = _completed_process(
             "", returncode=1, stderr="sensitive: user@example.com sent secret"
@@ -199,26 +199,46 @@ class TestRunClaude:
         assert "sensitive" not in str(exc_info.value)
         assert "exited 1" in str(exc_info.value)
 
-    @patch("mindful_harness.llm.subprocess.run")
+    @patch("mindful_harness.llm._run_subprocess_bounded")
     def test_debug_env_var_surfaces_raw_error(
         self, mock_run: MagicMock, monkeypatch
     ) -> None:
         mock_run.return_value = _completed_process(
-            "", returncode=1, stderr="sensitive: user@example.com sent secret"
+            "", returncode=1, stderr="sensitive context that is not a secret"
         )
         monkeypatch.setenv("MINDFUL_HARNESS_DEBUG", "1")
         with pytest.raises(ClaudeCLIError) as exc_info:
             _run_claude(user_prompt="test")
-        # With DEBUG set, raw stderr is surfaced.
-        assert "sensitive" in str(exc_info.value)
+        # With DEBUG set, non-sensitive context is surfaced.
+        assert "sensitive context" in str(exc_info.value)
 
-    @patch("mindful_harness.llm.subprocess.run")
+    @patch("mindful_harness.llm._run_subprocess_bounded")
+    def test_debug_mode_redacts_emails_and_keys(
+        self, mock_run: MagicMock, monkeypatch
+    ) -> None:
+        """Even with debug enabled, emails and API-key-shaped tokens are redacted."""
+        mock_run.return_value = _completed_process(
+            "",
+            returncode=1,
+            stderr="contacted boss@example.com with api_key=sk-1234567890abcdef and token=secret-very-long",
+        )
+        monkeypatch.setenv("MINDFUL_HARNESS_DEBUG", "1")
+        with pytest.raises(ClaudeCLIError) as exc_info:
+            _run_claude(user_prompt="test")
+        msg = str(exc_info.value)
+        assert "boss@example.com" not in msg
+        assert "<email>" in msg
+        assert "sk-1234567890abcdef" not in msg
+        # The api_key=... and token=... patterns should be redacted.
+        assert "<key>" in msg
+
+    @patch("mindful_harness.llm._run_subprocess_bounded")
     def test_raises_on_invalid_json(self, mock_run: MagicMock) -> None:
         mock_run.return_value = _completed_process("not json")
         with pytest.raises(ClaudeCLIError, match="not valid JSON"):
             _run_claude(user_prompt="test")
 
-    @patch("mindful_harness.llm.subprocess.run")
+    @patch("mindful_harness.llm._run_subprocess_bounded")
     def test_raises_on_is_error(self, mock_run: MagicMock) -> None:
         envelope = {"is_error": True, "result": "rate limited"}
         mock_run.return_value = _completed_process(json.dumps(envelope))

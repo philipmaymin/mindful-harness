@@ -93,34 +93,48 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 
     item = FirehoseItem(source=args.source, content=content)
     debug = os.environ.get("MINDFUL_HARNESS_DEBUG")
+    state = _state_path(args)
 
-    with mind_session(_state_path(args)) as mind:
-        if args.with_llm:
-            try:
-                from mindful_harness.llm import ingest as llm_ingest
-
-                distillation = llm_ingest(item, mind, model=args.model)
-                print(
-                    f"Distilled via {args.model} "
-                    f"({distillation.get('_cost_usd', 0):.4f} USD, "
-                    f"{distillation.get('_duration_ms', 0)/1000:.1f}s)"
-                )
-            except Exception as e:
-                # apply_distillation is build-then-commit: on failure
-                # the Mind has NOT been mutated, so it is safe to fall
-                # back to a plain ingest without double-logging the item.
-                msg = f"LLM ingest failed: {type(e).__name__}"
-                if debug:
-                    msg += f": {e}"
-                print(msg, file=sys.stderr)
-                print(
-                    "Item added to firehose without distillation.",
-                    file=sys.stderr,
-                )
-                mind.ingest(item)
-        else:
+    if not args.with_llm:
+        # Fast path: no external call, single session.
+        with mind_session(state) as mind:
             mind.ingest(item)
-            print(f"Ingested item from {args.source} (no distillation).")
+        print(f"Ingested item from {args.source} (no distillation).")
+        return 0
+
+    # LLM path: do NOT hold the state lock during the (potentially
+    # 120s+) external call. Snapshot under lock, release for the call,
+    # reacquire to apply. apply_distillation is build-then-commit so
+    # a malformed payload leaves the Mind untouched, and the snapshot
+    # being slightly stale relative to a concurrent writer is fine
+    # because apply only appends new items.
+    snapshot = load_or_new(state)
+
+    from mindful_harness.llm import (
+        apply_distillation,
+        distill_item,
+    )
+
+    try:
+        distillation = distill_item(item, snapshot, model=args.model)
+        print(
+            f"Distilled via {args.model} "
+            f"({distillation.get('_cost_usd', 0):.4f} USD, "
+            f"{distillation.get('_duration_ms', 0)/1000:.1f}s)"
+        )
+    except Exception as e:
+        # No state was mutated under lock; safe to fall back.
+        msg = f"LLM ingest failed: {type(e).__name__}"
+        if debug:
+            msg += f": {e}"
+        print(msg, file=sys.stderr)
+        print("Item added to firehose without distillation.", file=sys.stderr)
+        with mind_session(state) as mind:
+            mind.ingest(item)
+        return 0
+
+    with mind_session(state) as mind:
+        apply_distillation(distillation, mind, item)
     return 0
 
 

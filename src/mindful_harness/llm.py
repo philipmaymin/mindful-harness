@@ -16,8 +16,10 @@ the harness's own.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import re
 import subprocess
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +34,19 @@ DEFAULT_INGESTION_MODEL = os.environ.get("MINDFUL_HARNESS_INGESTION_MODEL", "hai
 DEFAULT_HANDS_MODEL = os.environ.get("MINDFUL_HARNESS_HANDS_MODEL", "sonnet")
 DEFAULT_TIMEOUT_SECONDS = float(
     os.environ.get("MINDFUL_HARNESS_TIMEOUT", "120")
+)
+# Cap the bytes we will accept from the Claude CLI. A buggy or replaced
+# binary that spewed gigabytes could otherwise exhaust memory before the
+# timeout fires.
+MAX_CLAUDE_OUTPUT_BYTES = int(
+    os.environ.get("MINDFUL_HARNESS_MAX_OUTPUT_BYTES", str(10 * 1024 * 1024))
+)
+# Pattern for redacting plausibly-sensitive substrings from error
+# messages even when debug mode is enabled. Conservative: emails,
+# API-key-shaped tokens, and overly long opaque strings.
+_REDACT_EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
+_REDACT_KEY_RE = re.compile(
+    r"(?i)(?:sk|pk|api[_-]?key|token|secret|bearer)[\s:=]+[\w./+-]{12,}"
 )
 
 
@@ -229,12 +244,11 @@ def _run_claude(
         args.extend(["--max-budget-usd", str(max_budget_usd)])
 
     try:
-        completed = subprocess.run(
+        completed = _run_subprocess_bounded(
             args,
-            input=user_prompt,
-            capture_output=True,
-            text=True,
+            input_text=user_prompt,
             timeout=timeout,
+            max_output_bytes=MAX_CLAUDE_OUTPUT_BYTES,
         )
     except subprocess.TimeoutExpired as e:
         raise ClaudeCLIError(f"claude -p timed out after {timeout}s") from e
@@ -244,7 +258,7 @@ def _run_claude(
     if completed.returncode != 0:
         msg = f"claude -p exited {completed.returncode}"
         if debug:
-            msg += f": stderr={completed.stderr.strip()[:500]}"
+            msg += f": stderr={_redact(completed.stderr.strip()[:500])}"
         raise ClaudeCLIError(msg)
 
     try:
@@ -252,16 +266,68 @@ def _run_claude(
     except json.JSONDecodeError as e:
         msg = "claude -p output is not valid JSON"
         if debug:
-            msg += f": {completed.stdout[:500]}"
+            msg += f": {_redact(completed.stdout[:500])}"
         raise ClaudeCLIError(msg) from e
 
     if envelope.get("is_error"):
         msg = "claude reported error"
         if debug:
-            msg += f": {envelope}"
+            msg += f": {_redact(str(envelope)[:500])}"
         raise ClaudeCLIError(msg)
 
     return envelope
+
+
+def _redact(text: str) -> str:
+    """Best-effort redaction of obviously-sensitive substrings.
+
+    Used in error messages even when debug mode is enabled, because the
+    debug flag is a foot-shooting opt-in, not a license to leak emails
+    or API keys to whoever is looking at the terminal. Conservative on
+    purpose: catches the easy cases without trying to redact arbitrary
+    "secret-looking" content.
+    """
+    text = _REDACT_EMAIL_RE.sub("<email>", text)
+    text = _REDACT_KEY_RE.sub("<key>", text)
+    return text
+
+
+def _run_subprocess_bounded(
+    args: list[str],
+    input_text: str,
+    timeout: float,
+    max_output_bytes: int,
+) -> subprocess.CompletedProcess[str]:
+    """Run a subprocess and refuse output larger than max_output_bytes.
+
+    A buggy or replaced `claude` binary could otherwise produce
+    arbitrarily large stdout, exhausting memory before the timeout
+    fires. We use Popen + communicate (which still buffers fully) and
+    enforce the limit afterwards; on overflow we raise rather than
+    returning silently-truncated content.
+    """
+    proc = subprocess.Popen(
+        args,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(input=input_text, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        with contextlib.suppress(Exception):
+            proc.communicate(timeout=5)
+        raise
+    if len(stdout) > max_output_bytes or len(stderr) > max_output_bytes:
+        raise ClaudeCLIError(
+            f"claude output exceeded {max_output_bytes} bytes; "
+            "possible binary misbehavior."
+        )
+    return subprocess.CompletedProcess(
+        args=args, returncode=proc.returncode, stdout=stdout, stderr=stderr
+    )
 
 
 def distill_item(

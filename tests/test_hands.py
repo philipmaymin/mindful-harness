@@ -146,6 +146,20 @@ class TestHandManualExecute:
         assert len(h.process_trail) == 2
         assert "starting work" in h.process_trail[0]
 
+    def test_execute_manual_accepts_would_revise_if(self) -> None:
+        """A manually-executed Hand should be convertible to a Decision."""
+        m = Mind()
+        h = spawn_hand(m, task="t", framework="initial")
+        r = h.execute_manual(
+            chosen="A",
+            rejected_alternatives=["B", "C"],
+            framings={"x": "...", "y": "...", "z": "..."},
+            confidence=0.6,
+            would_revise_if=["if metric drops below 0.3"],
+        )
+        d = r.to_decision()  # no explicit triggers needed; uses Hand's
+        assert "metric drops" in d.reversion_triggers[0]
+
 
 class TestAdvocate:
     def test_rejects_empty_critique(self) -> None:

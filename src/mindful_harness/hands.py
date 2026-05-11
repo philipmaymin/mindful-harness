@@ -118,6 +118,7 @@ class Hand:
         rejected_alternatives: list[Any],
         framings: dict[str, str],
         confidence: float,
+        would_revise_if: list[str] | None = None,
     ) -> HandResult:
         """Produce a HandResult from explicit caller input.
 
@@ -125,6 +126,10 @@ class Hand:
         produces what the LLM would produce. Useful for testing the
         orchestration shape and for high-stakes decisions where the
         human wants to drive directly.
+
+        Pass `would_revise_if` so the resulting HandResult can be
+        converted to a Decision via `to_decision()` without supplying
+        reversion triggers separately.
         """
         self.log(f"manual execution: chose {chosen!r}")
         return HandResult(
@@ -134,6 +139,7 @@ class Hand:
             framework=self.framework,
             confidence=confidence,
             process_trail=list(self.process_trail),
+            would_revise_if=list(would_revise_if) if would_revise_if else [],
         )
 
 
@@ -246,4 +252,5 @@ def run_with_advocate_and_questioner(
         process_trail=list(hand.process_trail),
         advocate_critique=critique,
         questioner_challenges=challenges,
+        would_revise_if=list(result.would_revise_if),
     )

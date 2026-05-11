@@ -249,6 +249,44 @@ class TestFileSecurityAndAtomicity:
         assert mode == 0o700
 
 
+class TestLockSafety:
+    def test_lock_failure_raises_does_not_silently_proceed(
+        self, populated_mind: Mind, tmp_path: Path
+    ) -> None:
+        """If the lock file is a symlink, save() must raise — never silently bypass lock.
+
+        Regression test for the v0.0.9 bug where _file_lock fell through to an
+        unlocked yield on os.open failure.
+        """
+        from mindful_harness.persistence import LockAcquisitionError
+
+        path = tmp_path / "mind.json"
+        # Plant a symlink at the expected lock path before any save happens.
+        lock_path = path.with_name(path.name + ".lock")
+        decoy = tmp_path / "decoy.txt"
+        decoy.write_text("untouched")
+        lock_path.symlink_to(decoy)
+
+        with pytest.raises(LockAcquisitionError):
+            save(populated_mind, path)
+        # Decoy was NOT clobbered by the lock attempt.
+        assert decoy.read_text() == "untouched"
+
+    def test_refuses_symlinked_state_path(
+        self, populated_mind: Mind, tmp_path: Path
+    ) -> None:
+        """save() must not follow a symlinked state path onto an arbitrary target."""
+        real_path = tmp_path / "real.json"
+        real_path.write_text("untouched")
+        symlink_path = tmp_path / "mind.json"
+        symlink_path.symlink_to(real_path)
+
+        with pytest.raises(PermissionError, match="symlinked state path"):
+            save(populated_mind, symlink_path)
+        # Real target was not clobbered.
+        assert real_path.read_text() == "untouched"
+
+
 class TestMindSession:
     def test_session_persists_changes_on_normal_exit(
         self, tmp_path: Path

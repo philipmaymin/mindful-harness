@@ -240,14 +240,25 @@ def from_dict(data: dict[str, Any]) -> Mind:
     return mind
 
 
+class LockAcquisitionError(OSError):
+    """Raised when the persistence lock cannot be safely acquired.
+
+    Includes the symlink-attack case: if `mind.json.lock` is a symlink,
+    O_NOFOLLOW makes `os.open` refuse to follow it, and we raise rather
+    than fall through to an unlocked write.
+    """
+
+
 @contextlib.contextmanager
 def _file_lock(lock_path: Path):
-    """Best-effort exclusive lock across processes on POSIX systems.
+    """Exclusive lock across processes on POSIX systems.
 
     The lock file is opened with O_NOFOLLOW on POSIX so a symlink at the
     lock path cannot be followed to truncate an attacker-chosen
-    arbitrary file. On systems without O_NOFOLLOW or fcntl, falls back
-    to a best-effort open without locking.
+    arbitrary file. If the open fails (symlink, permission, full disk,
+    etc.) the function raises `LockAcquisitionError` rather than
+    silently proceeding without a lock — silent-fallback was the bug
+    audit pass #3 caught in v0.0.9.
 
     The lock file is left in place after release so concurrent writers
     cannot race on its creation.
@@ -258,25 +269,47 @@ def _file_lock(lock_path: Path):
         flags |= os.O_NOFOLLOW
     try:
         fd = os.open(str(lock_path), flags, 0o600)
-    except OSError:
-        # If a symlink (or other) interferes, refuse rather than follow it.
-        yield
-        return
+    except OSError as e:
+        raise LockAcquisitionError(
+            f"refusing to acquire lock at {lock_path}: {e.__class__.__name__}. "
+            "If the lock path is a symlink, remove it. "
+            "If the directory is unwritable, choose a different --state path."
+        ) from e
     lock_f = os.fdopen(fd, "r+b")
+    locked = False
     try:
         if fcntl is not None:
             try:
                 fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+                locked = True
             except OSError:
-                pass  # filesystem doesn't support locks; continue best-effort
+                # Filesystem (e.g. NFS without lockd) does not support
+                # advisory locks. Continue without locking; the
+                # exclusive O_CREAT still provides some protection.
+                pass
         yield
     finally:
         try:
-            if fcntl is not None:
+            if locked and fcntl is not None:
                 with contextlib.suppress(OSError):
                     fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
         finally:
             lock_f.close()
+
+
+def _refuse_symlinked_target(p_user: Path) -> None:
+    """Refuse to write through a symlinked state file.
+
+    Must be called on the user-supplied (un-resolved) path, since
+    `.resolve()` would already have followed the symlink. Detects the
+    case where `--state ~/innocent.json` is a symlink to an
+    attacker-chosen target.
+    """
+    if p_user.is_symlink():
+        raise PermissionError(
+            f"refusing to write to symlinked state path: {p_user}. "
+            "Remove the symlink or choose a non-symlinked path."
+        )
 
 
 def _restrict_dir_permissions(directory: Path) -> None:
@@ -287,7 +320,11 @@ def _restrict_dir_permissions(directory: Path) -> None:
 
 
 def _save_locked(mind: Mind, p: Path) -> None:
-    """Write Mind to p atomically. Caller must already hold the path lock."""
+    """Write Mind to p atomically. Caller must already hold the path lock.
+
+    Symlink check is performed by the public `save()` / `mind_session()`
+    entry points on the user-supplied (pre-resolve) path.
+    """
     payload = json.dumps(to_dict(mind), indent=2, default=str).encode("utf-8")
     fd, tmp_path_str = tempfile.mkstemp(
         dir=p.parent, prefix=f".{p.name}.", suffix=".tmp"
@@ -319,9 +356,14 @@ def save(mind: Mind, path: str | Path) -> Path:
     `--state ~/shared/mind.json` does not silently lock other
     collaborators out of `~/shared`.
 
+    A symlinked state path is refused before any I/O, so an attacker
+    cannot redirect the write onto an arbitrary user-owned file.
+
     Returns the resolved path.
     """
-    p = Path(path).expanduser().resolve()
+    p_user = Path(path).expanduser()
+    _refuse_symlinked_target(p_user)
+    p = p_user.resolve()
     parent_existed = p.parent.exists()
     p.parent.mkdir(parents=True, exist_ok=True)
     if not parent_existed:
@@ -335,13 +377,22 @@ def save(mind: Mind, path: str | Path) -> Path:
 
 
 def _load_locked(p: Path) -> Mind:
-    """Read Mind from p. Caller must already hold the path lock if it exists."""
+    """Read Mind from p. Caller must already hold the path lock if it exists.
+
+    Symlink check is performed by the public `load()` / `mind_session()`
+    entry points on the user-supplied (pre-resolve) path.
+    """
     return from_dict(json.loads(p.read_text()))
 
 
 def load(path: str | Path) -> Mind:
-    """Load a Mind from a JSON file. Raises FileNotFoundError if missing."""
-    p = Path(path).expanduser().resolve()
+    """Load a Mind from a JSON file. Raises FileNotFoundError if missing.
+
+    A symlinked state path is refused before any I/O.
+    """
+    p_user = Path(path).expanduser()
+    _refuse_symlinked_target(p_user)
+    p = p_user.resolve()
     lock_path = p.with_name(p.name + ".lock")
     if p.parent.exists():
         with _file_lock(lock_path):
@@ -374,7 +425,9 @@ def mind_session(path: str | Path):
             mind.ask(...)
         # state is now persisted atomically with the changes applied
     """
-    p = Path(path).expanduser().resolve()
+    p_user = Path(path).expanduser()
+    _refuse_symlinked_target(p_user)
+    p = p_user.resolve()
     parent_existed = p.parent.exists()
     p.parent.mkdir(parents=True, exist_ok=True)
     if not parent_existed:
